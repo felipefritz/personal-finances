@@ -43,6 +43,12 @@ def create_db_and_tables() -> None:
                 conn.execute(text("ALTER TABLE transactions ADD COLUMN original_amount FLOAT"))
             if "original_currency" not in tx_col_names:
                 conn.execute(text("ALTER TABLE transactions ADD COLUMN original_currency VARCHAR(10)"))
+            if "installment_current" not in tx_col_names:
+                conn.execute(text("ALTER TABLE transactions ADD COLUMN installment_current INTEGER"))
+            if "installment_total" not in tx_col_names:
+                conn.execute(text("ALTER TABLE transactions ADD COLUMN installment_total INTEGER"))
+            if "installment_base_amount" not in tx_col_names:
+                conn.execute(text("ALTER TABLE transactions ADD COLUMN installment_base_amount REAL"))
 
 
 def get_session():

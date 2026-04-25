@@ -24,6 +24,9 @@ class TransactionBase(BaseModel):
     tags: Optional[str] = None  # comma-separated
     status: str = "confirmed"
     fixed_expense_id: Optional[int] = None
+    installment_current: Optional[int] = None
+    installment_total: Optional[int] = None
+    installment_base_amount: Optional[float] = None
 
 
 class TransactionCreate(TransactionBase):

@@ -357,3 +357,33 @@ export interface AgentAnalysis {
     variable_expenses: number;
   };
 }
+
+// Projection
+export interface SuggestedSaving {
+  goal_id: number;
+  goal_name: string;
+  priority: number;
+  amount: number;
+}
+
+export interface MonthlyBalance {
+  month: number;
+  year: number;
+  label: string;
+  is_actual: boolean;
+  total_income: number;
+  recurring_income_template: number;
+  fixed_expenses: number;
+  pending_installments: number;
+  variable_expenses: number;
+  total_expenses: number;
+  available_balance: number;
+  suggested_savings: SuggestedSaving[];
+  total_suggested_savings: number;
+  net_balance: number;
+}
+
+export interface AnnualProjection {
+  year: number;
+  months: MonthlyBalance[];
+}

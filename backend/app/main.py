@@ -21,6 +21,7 @@ from app.routers import (
     bank_connections_router,
     exchange_rates_router,
     recurring_incomes_router,
+    projections_router,
 )
 
 
@@ -71,6 +72,7 @@ app.include_router(agent_router, prefix=API_PREFIX)
 app.include_router(bank_connections_router, prefix=API_PREFIX)
 app.include_router(exchange_rates_router, prefix=API_PREFIX)
 app.include_router(recurring_incomes_router, prefix=API_PREFIX)
+app.include_router(projections_router, prefix=API_PREFIX)
 
 
 @app.get("/", tags=["Health"])

@@ -17,7 +17,7 @@ from app.schemas.import_file import ImportPreviewRow
 DATE_PATTERN = re.compile(r"\b(\d{1,2}[-/]\d{1,2}[-/]\d{2,4})\b")
 AMOUNT_PATTERN = re.compile(r"(?<!\d)([-+]?\$?\s?[\d.]+(?:,[\d]{2})?|[-+]?\$?\s?[\d,]+(?:\.[\d]{2})?)(?!\d)")
 IGNORE_LINE_PATTERN = re.compile(
-    r"saldo|cartola|estado de cuenta|fecha\s+descripcion|detalle|pagina|p\u00e1gina|movimientos|disponible"
+    r"cartola|estado de cuenta|fecha\s+descripcion|detalle|pagina|p\u00e1gina|movimientos"
     r"|per[i\u00ed]odo.{0,25}facturado"
     r"|per[i\u00ed]odo.{0,25}facturaci"
     r"|pr[o\u00f3]ximo.{0,8}per[i\u00ed]odo"
@@ -28,6 +28,32 @@ IGNORE_LINE_PATTERN = re.compile(
     r"|\bus\s+us\b",
     re.IGNORECASE,
 )
+
+# Summary/total lines that must never be imported as transactions
+_TOTAL_LINE_RE = re.compile(
+    r"^\s*(total|subtotal|gran\s+total|monto\s+total|suma\s+total)\b"
+    r"|\b(total|subtotal)\s*[:\-]"
+    r"|\btotal\s+(?:de\s+)?(?:movimientos?|compras?|cargos?|abonos?|deudas?|per[i\u00ed]odo|mes|facturado|facturaci[o\u00f3]n)\b"
+    r"|\bsaldo\s+(?:anterior|final|al\s+\d)"
+    r"|\bpago\s+(?:m[i\u00ed]nimo|total|m[a\u00e1]ximo)\s*(?:[\$:\d])"
+    r"|\bl[i\u00ed]nea\s+de\s+cr[e\u00e9]dito\b",
+    re.IGNORECASE,
+)
+
+# Detects installment fractions in financial context
+# Handles: cuota N/M, N/M tasa, 0/N (unfactured), N/M s/int, N/M c/int
+_INSTALLMENT_RE = re.compile(
+    r"cuota\s*\d+\s*/\s*\d+"
+    r"|(?<!\d)(0)\s*/\s*(\d{2,})(?!\d)"                     # 0/N → unfactured
+    r"|(?<!\d)(\d{1,3})\s*/\s*(1[3-9]|[2-9]\d)(?!\d)"      # N/M where M>12 (can't be a date)
+    r"|(?<!\d)(\d{1,2})\s*/\s*(\d{2,3})(?!\d)\s*"
+        r"(?:tasa|inter[e\u00e9]s|s/int|c/int|sin\s+int|con\s+int|cuotas?)"
+    r"|tasa\s+int",
+    re.IGNORECASE,
+)
+
+# Extracts (current, total) numbers from an installment fraction
+_INSTALLMENT_FRAC_RE = re.compile(r"(?<!\d)(\d{1,3})\s*/\s*(\d{1,3})(?!\d)")
 INCOME_HINTS = ("abono", "deposito", "depósito", "pago recibido", "remuner", "sueldo", "devolucion", "devolución", "cashback")
 TRANSFER_HINTS = ("transferencia", "traspaso", "transf.")
 EXPENSE_HINTS = ("compra", "cargo", "pago", "cuota", "debito", "débito", "giro")
@@ -116,6 +142,8 @@ def parse_pdf_transactions(raw_rows: List[Dict[str, Any]], existing_keys: set) -
         line = (row.get("raw_line", "") or "").strip()
         if not line or IGNORE_LINE_PATTERN.search(line):
             continue
+        if _is_total_line(line):
+            continue
 
         date_match = DATE_PATTERN.search(line)
         # Strip long reference numbers (17+ digits) before amount matching
@@ -138,6 +166,7 @@ def parse_pdf_transactions(raw_rows: List[Dict[str, Any]], existing_keys: set) -
         is_dup = dedup_key in existing_keys
 
         intl = _intl_raw_data(line)
+        installment_info = _extract_installment_info(line)
         preview_rows.append(
             ImportPreviewRow(
                 row_index=idx,
@@ -157,6 +186,8 @@ def parse_pdf_transactions(raw_rows: List[Dict[str, Any]], existing_keys: set) -
                     "is_international": intl["is_international"],
                     "original_currency": intl["original_currency"],
                     "original_amount": intl["original_amount"],
+                    "installment_current": installment_info[0] if installment_info else None,
+                    "installment_total": installment_info[1] if installment_info else None,
                 },
             )
         )
@@ -172,8 +203,24 @@ def _pick_amount_match(line: str) -> Optional[re.Match[str]]:
         return matches[0]
 
     lower_line = line.lower()
-    if "saldo" in lower_line and len(matches) >= 2:
+
+    # With 3+ amounts and a "saldo" column, the saldo is likely the running balance
+    # (last column); the transaction amount is the one before it.
+    if len(matches) >= 2 and "saldo" in lower_line:
         return matches[-2]
+
+    # When the line looks like a tabular row with a trailing balance column,
+    # skip the very last match if it appears to be a much larger "running total":
+    # heuristic: last amount >= 10x any earlier amount → it's a balance column.
+    if len(matches) >= 3:
+        try:
+            last_val = abs(_parse_cl_number(matches[-1].group(0)) or 0)
+            prev_vals = [abs(_parse_cl_number(m.group(0)) or 0) for m in matches[:-1]]
+            if last_val > 0 and all(last_val >= 10 * v for v in prev_vals if v > 0):
+                return matches[-2]
+        except Exception:
+            pass
+
     return matches[-1]
 
 
@@ -239,15 +286,44 @@ def _contains_any(text: str, needles: tuple[str, ...]) -> bool:
     return any(needle in lowered for needle in needles)
 
 
+def _is_total_line(line: str) -> bool:
+    """Return True if the line is a summary/total row that must not become a transaction."""
+    return bool(_TOTAL_LINE_RE.search(line))
+
+
 def _is_installment_line(line: str) -> bool:
-    lower = line.lower()
-    # Explicit cuota fraction: "cuota 4/10"
-    if re.search(r"cuota\s*\d+\s*/\s*\d+", lower):
-        return True
-    # BCI-style credit installments always carry an explicit interest rate
-    if "tasa int" in lower:
-        return True
-    return False
+    """Return True if the line describes a purchase paid in installments (cuotas)."""
+    return bool(_INSTALLMENT_RE.search(line))
+
+
+def _extract_installment_info(line: str) -> Optional[Tuple[int, int]]:
+    """
+    Extract (installment_current, installment_total) from a line.
+    Returns None if no installment fraction is found.
+    For a 0/N pattern (unfactured purchase) returns (0, N).
+    """
+    if not _is_installment_line(line):
+        return None
+
+    # Prefer explicit "cuota N/M"
+    m = re.search(r"cuota\s*(\d+)\s*/\s*(\d+)", line, re.IGNORECASE)
+    if m:
+        return int(m.group(1)), int(m.group(2))
+
+    # Walk all N/M fractions and pick the most likely installment one
+    for frac in _INSTALLMENT_FRAC_RE.finditer(line):
+        num = int(frac.group(1))
+        total = int(frac.group(2))
+        if num == 0 and total >= 2:
+            return 0, total          # unfactured purchase
+        if total > 12:
+            return num, total        # denominator > 12 → can't be a date month
+        if total >= 2 and num <= total:
+            # Only accept if another installment keyword nearby
+            context = line.lower()
+            if any(kw in context for kw in ("tasa", "inter", "s/int", "c/int", "cuota")):
+                return num, total
+    return None
 
 
 def _intl_raw_data(line: str) -> Dict[str, Any]:

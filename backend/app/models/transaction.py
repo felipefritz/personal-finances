@@ -28,5 +28,9 @@ class Transaction(SQLModel, table=True):
     status: str = Field(default="confirmed", max_length=50)  # confirmed, pending, ignored
     fixed_expense_id: Optional[int] = Field(default=None, foreign_key="fixed_expenses.id")
     import_file_id: Optional[int] = Field(default=None, foreign_key="import_files.id")
+    # Installment metadata (populated from bank statement parsing)
+    installment_current: Optional[int] = Field(default=None)  # 0 = unfactured purchase, N = Nth payment
+    installment_total: Optional[int] = Field(default=None)    # total number of installments
+    installment_base_amount: Optional[float] = Field(default=None)  # amount per installment
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow)

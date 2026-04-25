@@ -10,6 +10,7 @@ import BudgetsPage from '../pages/BudgetsPage';
 import ImportsPage from '../pages/ImportsPage';
 import AgentPage from '../pages/AgentPage';
 import BankConnectionsPage from '../pages/BankConnectionsPage';
+import ProjectionPage from '../pages/ProjectionPage';
 
 export const appRoutes: RouteObject[] = [
   {
@@ -24,6 +25,7 @@ export const appRoutes: RouteObject[] = [
       { path: 'fixed-expenses', element: <FixedExpensesPage /> },
       { path: 'savings-goals', element: <SavingsGoalsPage /> },
       { path: 'budgets', element: <BudgetsPage /> },
+      { path: 'proyeccion', element: <ProjectionPage /> },
       { path: 'imports', element: <ImportsPage /> },
       { path: 'agent', element: <AgentPage /> },
       { path: 'bank-connections', element: <BankConnectionsPage /> },

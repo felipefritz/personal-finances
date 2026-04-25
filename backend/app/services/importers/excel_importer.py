@@ -2,11 +2,29 @@
 Excel file importer. Parses uploaded Excel files and creates transaction preview rows.
 """
 import io
+import re
 from typing import Any, Dict, List, Optional, Tuple
 
 import pandas as pd
 
 from app.schemas.import_file import ColumnMapping, ImportPreviewRow
+
+# Summary/total rows that must not be imported as transactions (mirrors pdf_importer logic)
+_EXCEL_TOTAL_RE = re.compile(
+    r"^\s*(total|subtotal|gran\s+total|monto\s+total|suma\s+total)\b"
+    r"|\b(total|subtotal)\s*[:\-]"
+    r"|\btotal\s+(?:de\s+)?(?:movimientos?|compras?|cargos?|abonos?|deudas?|facturado)\b"
+    r"|\bsaldo\s+(?:anterior|final|al\s+\d)",
+    re.IGNORECASE,
+)
+
+
+def _is_excel_total_row(row: Dict[str, Any]) -> bool:
+    """Return True if any cell value in the row matches a total/summary pattern."""
+    for val in row.values():
+        if isinstance(val, str) and _EXCEL_TOTAL_RE.search(val.strip()):
+            return True
+    return False
 
 
 def parse_excel(
@@ -36,6 +54,9 @@ def build_preview_rows(
     preview_rows: List[ImportPreviewRow] = []
 
     for idx, row in enumerate(raw_rows):
+        if _is_excel_total_row(row):
+            continue
+
         date_val = _safe_str(row.get(column_mapping.date_column))
         desc_val = _safe_str(row.get(column_mapping.description_column))
         amount_val = _safe_float(row.get(column_mapping.amount_column))

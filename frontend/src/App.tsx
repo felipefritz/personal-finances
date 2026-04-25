@@ -11,6 +11,7 @@ import ImportsPage from './pages/ImportsPage';
 import AgentPage from './pages/AgentPage';
 import BankConnectionsPage from './pages/BankConnectionsPage';
 import RecurringIncomesPage from './pages/RecurringIncomesPage';
+import ProjectionPage from './pages/ProjectionPage';
 
 export default function App() {
   return (
@@ -25,6 +26,7 @@ export default function App() {
           <Route path="recurring-incomes" element={<RecurringIncomesPage />} />
         <Route path="savings-goals" element={<SavingsGoalsPage />} />
         <Route path="budgets" element={<BudgetsPage />} />
+        <Route path="proyeccion" element={<ProjectionPage />} />
         <Route path="imports" element={<ImportsPage />} />
         <Route path="agent" element={<AgentPage />} />
         <Route path="bank-connections" element={<BankConnectionsPage />} />

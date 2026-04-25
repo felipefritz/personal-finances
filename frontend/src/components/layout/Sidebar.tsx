@@ -22,6 +22,7 @@ import PieChartIcon from '@mui/icons-material/PieChart';
 import UploadFileIcon from '@mui/icons-material/UploadFile';
 import SmartToyIcon from '@mui/icons-material/SmartToy';
 import LinkIcon from '@mui/icons-material/Link';
+import CalendarMonthIcon from '@mui/icons-material/CalendarMonth';
 
 const NAV_ITEMS = [
   { label: 'Dashboard', to: '/dashboard', icon: <DashboardIcon /> },
@@ -32,6 +33,7 @@ const NAV_ITEMS = [
     { label: 'Ingresos Recurrentes', to: '/recurring-incomes', icon: <TrendingUpIcon /> },
   { label: 'Presupuestos', to: '/budgets', icon: <PieChartIcon /> },
   { label: 'Objetivos', to: '/savings-goals', icon: <SavingsIcon /> },
+  { label: 'Proyección Anual', to: '/proyeccion', icon: <CalendarMonthIcon /> },
   { label: 'Importar', to: '/imports', icon: <UploadFileIcon /> },
   { label: 'Agente IA', to: '/agent', icon: <SmartToyIcon /> },
   { label: 'Conexiones', to: '/bank-connections', icon: <LinkIcon /> },

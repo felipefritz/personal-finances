@@ -196,6 +196,17 @@ def confirm_import(
 
             raw_data = row.raw_data or {}
             transaction_type = row.transaction_type or suggestion.get("suggested_type") or "expense"
+
+            # Installment metadata from parser
+            inst_current = raw_data.get("installment_current")
+            inst_total = raw_data.get("installment_total")
+            inst_base: Optional[float] = None
+            if inst_total and inst_total > 0 and row.amount is not None:
+                inst_base = round(abs(row.amount) / inst_total, 2)
+
+            # Unfactured purchase (0/N): mark as pending, not confirmed
+            tx_status = "pending" if inst_current == 0 else "confirmed"
+
             t = Transaction(
                 date=tx_date,
                 description=row.description or "Sin descripción",
@@ -206,14 +217,17 @@ def confirm_import(
                 category_id=cat_id,
                 is_ant_expense=suggestion.get("is_ant_expense", False),
                 is_fixed_expense=bool(raw_data.get("is_fixed_expense") or suggestion.get("is_fixed_expense")),
-                is_debt=bool(raw_data.get("is_debt") or suggestion.get("is_debt")),
+                is_debt=bool(raw_data.get("is_debt") or suggestion.get("is_debt") or inst_total is not None),
                 is_transfer=transaction_type == "transfer",
                 is_international=bool(row.is_international),
-                is_paid=True,
+                is_paid=inst_current != 0,
                 original_amount=row.original_amount,
                 original_currency=row.original_currency,
                 import_file_id=import_record.id,
-                status="confirmed",
+                installment_current=inst_current,
+                installment_total=inst_total,
+                installment_base_amount=inst_base,
+                status=tx_status,
             )
             session.add(t)
             saved += 1

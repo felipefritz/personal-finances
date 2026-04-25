@@ -10,6 +10,7 @@ from app.routers.agent import router as agent_router
 from app.routers.bank_connections import router as bank_connections_router
 from app.routers.exchange_rates import router as exchange_rates_router
 from app.routers.recurring_incomes import router as recurring_incomes_router
+from app.routers.projections import router as projections_router
 
 __all__ = [
     "dashboard_router",
@@ -24,4 +25,5 @@ __all__ = [
     "bank_connections_router",
     "exchange_rates_router",
     "recurring_incomes_router",
+    "projections_router",
 ]

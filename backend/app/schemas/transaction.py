@@ -1,6 +1,11 @@
 from typing import Optional, List
 from datetime import datetime, date
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
+
+# Alias to avoid Python 3.13 name-shadowing bug: when a field is named `date`
+# and has a default value (date: Optional[date] = None), the annotation resolves
+# the type `date` to the field's default (None) instead of datetime.date.
+_Date = date
 
 
 class TransactionBase(BaseModel):
@@ -20,6 +25,7 @@ class TransactionBase(BaseModel):
     is_paid: bool = True
     original_amount: Optional[float] = None
     original_currency: Optional[str] = None
+    local_amount: Optional[float] = None  # CLP equivalent for international transactions
     comment: Optional[str] = None
     tags: Optional[str] = None  # comma-separated
     status: str = "confirmed"
@@ -34,7 +40,7 @@ class TransactionCreate(TransactionBase):
 
 
 class TransactionUpdate(BaseModel):
-    date: Optional[date] = None
+    date: Optional[_Date] = None
     description: Optional[str] = None
     amount: Optional[float] = None
     transaction_type: Optional[str] = None
@@ -60,6 +66,7 @@ class TransactionRead(TransactionBase):
     import_file_id: Optional[int] = None
     category_name: Optional[str] = None
     account_name: Optional[str] = None
+    exchange_rate_usd: Optional[float] = None  # CLP per 1 USD used for conversion
     created_at: datetime
     updated_at: datetime
 
@@ -87,3 +94,28 @@ class TransactionListResponse(BaseModel):
     page: int
     page_size: int
     total_pages: int
+    total_amount: float
+
+
+class InstallmentPrepayRequest(BaseModel):
+    installments: int = Field(default=1, ge=1)
+
+
+class InstallmentPrepayResponse(BaseModel):
+    transaction_id: int
+    prepaid_installments: int
+    previous_remaining_installments: int
+    remaining_installments: int
+    closed_debt: bool
+
+
+class InstallmentPrepayRevertRequest(BaseModel):
+    installments: int = Field(default=1, ge=1)
+
+
+class InstallmentPrepayRevertResponse(BaseModel):
+    transaction_id: int
+    reverted_installments: int
+    previous_remaining_installments: int
+    remaining_installments: int
+    reopened_debt: bool

@@ -1,5 +1,6 @@
 import os
 import shutil
+import re
 from datetime import datetime, date
 from typing import List, Optional
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
@@ -37,6 +38,91 @@ def _is_password_related_error(exc: Exception) -> bool:
     return any(token in text for token in ("password", "encrypt", "decrypt", "permission"))
 
 
+_INSTALLMENT_DESC_RE = re.compile(r"\b(?:cf|cuota)\s*(\d{1,3})\s*[-/]\s*(\d{1,3})\b", re.IGNORECASE)
+_INCOME_DESC_RE = re.compile(
+    r"\b(abono|deposito|dep[oó]sito|remuneraci[oó]n|sueldo|cashback|devoluci[oó]n|reembolso|pago\s+recibido)\b",
+    re.IGNORECASE,
+)
+_CREDIT_LIMIT_LINE_RE = re.compile(r"\bcupo\s+total\b|\bl[ií]nea\s+de\s+cr[eé]dito\b", re.IGNORECASE)
+_AVAILABLE_CREDIT_LINE_RE = re.compile(r"\bcupo\s+disponible\b|\bdisponible\s+para\s+compras\b", re.IGNORECASE)
+_MONEY_TOKEN_RE = re.compile(r"\$?\s*-?[\d.]+(?:,\d+)?")
+
+
+def _extract_installment_from_description(description: str) -> Optional[tuple[int, int]]:
+    match = _INSTALLMENT_DESC_RE.search(description or "")
+    if not match:
+        return None
+    current = int(match.group(1))
+    total = int(match.group(2))
+    if total < 2:
+        return None
+    if current < 0 or current > total:
+        return None
+    return current, total
+
+
+def _looks_like_income_description(description: str) -> bool:
+    return bool(_INCOME_DESC_RE.search(description or ""))
+
+
+def _parse_clp_amount_from_text(text: str) -> Optional[float]:
+    cleaned = (text or "").replace("$", "").replace(" ", "").strip()
+    if not cleaned:
+        return None
+    negative = cleaned.startswith("-")
+    raw = cleaned.lstrip("+-")
+    if "," in raw:
+        raw = raw.replace(".", "").replace(",", ".")
+    elif raw.count(".") >= 2:
+        raw = raw.replace(".", "")
+    elif raw.count(".") == 1:
+        left, right = raw.split(".", 1)
+        if len(right) == 3:
+            raw = f"{left}{right}"
+    try:
+        value = float(raw)
+        return -value if negative else value
+    except ValueError:
+        return None
+
+
+def _largest_amount_in_line(line: str) -> Optional[float]:
+    amounts: List[float] = []
+    for token in _MONEY_TOKEN_RE.findall(line or ""):
+        parsed = _parse_clp_amount_from_text(token)
+        if parsed is not None:
+            amounts.append(abs(parsed))
+    if not amounts:
+        return None
+    return max(amounts)
+
+
+def _extract_statement_credit_metrics(raw_rows: List[dict]) -> dict:
+    """Extract statement-level credit metrics from PDF raw lines when present."""
+    credit_limit = None
+    available_credit = None
+
+    for row in raw_rows:
+        line = str(row.get("raw_line") or "").strip()
+        if not line:
+            continue
+
+        if credit_limit is None and _CREDIT_LIMIT_LINE_RE.search(line):
+            amount = _largest_amount_in_line(line)
+            if amount is not None:
+                credit_limit = amount
+
+        if available_credit is None and _AVAILABLE_CREDIT_LINE_RE.search(line):
+            amount = _largest_amount_in_line(line)
+            if amount is not None:
+                available_credit = amount
+
+    return {
+        "statement_credit_limit_clp": round(credit_limit, 2) if credit_limit is not None else None,
+        "statement_available_credit_clp": round(available_credit, 2) if available_credit is not None else None,
+    }
+
+
 @router.get("/", response_model=List[ImportFileRead])
 def list_imports(session: Session = Depends(get_session)):
     records = session.exec(select(ImportFile).order_by(ImportFile.imported_at.desc())).all()
@@ -49,6 +135,7 @@ async def upload_file(
     account_id: Optional[int] = Form(default=None),
     pdf_password: Optional[str] = Form(default=None),
     save_pdf_password: bool = Form(default=False),
+    import_type: Optional[str] = Form(default="estado_cuenta"),
     session: Session = Depends(get_session),
 ):
     if account_id is None:
@@ -74,6 +161,7 @@ async def upload_file(
         status="pending",
         account_id=account_id,
         stored_file_path=save_path,
+        import_type=import_type or "estado_cuenta",
     )
     session.add(import_record)
     session.commit()
@@ -83,9 +171,17 @@ async def upload_file(
     try:
         if file_type == "excel":
             from app.services.importers.excel_importer import parse_excel
-            columns, raw_rows = parse_excel(file_bytes)
+
+            columns, raw_rows = parse_excel(file_bytes, filename=filename)
             existing_keys = _get_existing_keys(session, account_id)
+            account = session.get(Account, account_id) if account_id else None
+            local_currency = (account.currency if account and account.currency else "CLP")
+
             preview_rows = _auto_map_excel_preview(raw_rows, columns, existing_keys)
+            statement_credit_metrics = {
+                "statement_credit_limit_clp": None,
+                "statement_available_credit_clp": None,
+            }
         else:
             from app.services.importers.pdf_importer import parse_pdf, parse_pdf_transactions
 
@@ -98,9 +194,10 @@ async def upload_file(
                 session.commit()
 
             columns, raw_rows = parse_pdf(file_bytes, password=effective_password)
+            statement_credit_metrics = _extract_statement_credit_metrics(raw_rows)
             existing_keys = _get_existing_keys(session, account_id)
-            preview_rows = parse_pdf_transactions(raw_rows, existing_keys)
             local_currency = (account.currency if account and account.currency else "CLP")
+            preview_rows = parse_pdf_transactions(raw_rows, existing_keys, local_currency=local_currency)
             preview_rows = normalize_pdf_preview_rows(raw_rows, preview_rows, local_currency=local_currency)
 
         dup_count = sum(1 for r in preview_rows if r.is_duplicate)
@@ -108,6 +205,8 @@ async def upload_file(
         period_start, period_end = _detect_preview_period(preview_rows)
         import_record.period_start = period_start
         import_record.period_end = period_end
+        import_record.statement_credit_limit_clp = statement_credit_metrics.get("statement_credit_limit_clp")
+        import_record.statement_available_credit_clp = statement_credit_metrics.get("statement_available_credit_clp")
         session.add(import_record)
         session.commit()
 
@@ -150,30 +249,83 @@ def confirm_import(
 
     # Reload file from disk and re-parse
     try:
-        save_path = _find_upload_file(import_record.filename)
+        if import_record.stored_file_path and os.path.exists(import_record.stored_file_path):
+            save_path = import_record.stored_file_path
+        else:
+            save_path = _find_upload_file(import_record.filename)
         with open(save_path, "rb") as f:
             file_bytes = f.read()
 
         if import_record.file_type == "excel":
             from app.services.importers.excel_importer import parse_excel, build_preview_rows
-            columns, raw_rows = parse_excel(file_bytes)
-            mapping = data.column_mapping or _auto_detect_mapping(columns)
+
+            columns, raw_rows = parse_excel(file_bytes, filename=import_record.filename)
             existing_keys = _get_existing_keys(session, data.account_id)
+            account = session.get(Account, data.account_id)
+            local_currency = (account.currency if account and account.currency else "CLP")
+
+            mapping = data.column_mapping or _auto_detect_mapping(columns)
             preview_rows = build_preview_rows(raw_rows, mapping, existing_keys)
+            statement_credit_metrics = {
+                "statement_credit_limit_clp": None,
+                "statement_available_credit_clp": None,
+            }
         else:
             from app.services.importers.pdf_importer import parse_pdf, parse_pdf_transactions
             account = session.get(Account, data.account_id)
             effective_password = data.pdf_password or (account.statement_pdf_password if account else None)
             _, raw_rows = parse_pdf(file_bytes, password=effective_password)
+            statement_credit_metrics = _extract_statement_credit_metrics(raw_rows)
             existing_keys = _get_existing_keys(session, data.account_id)
-            preview_rows = parse_pdf_transactions(raw_rows, existing_keys)
             local_currency = (account.currency if account and account.currency else "CLP")
+            preview_rows = parse_pdf_transactions(raw_rows, existing_keys, local_currency=local_currency)
             preview_rows = normalize_pdf_preview_rows(raw_rows, preview_rows, local_currency=local_currency)
+
+        unselected_count = 0
+        if data.selected_row_indices is not None:
+            selected_set = {int(idx) for idx in data.selected_row_indices}
+            before_count = len(preview_rows)
+            preview_rows = [row for row in preview_rows if row.row_index in selected_set]
+            unselected_count = before_count - len(preview_rows)
 
         period_start, period_end = _detect_preview_period(preview_rows)
 
+        # Derive statement_month (YYYY-MM) from period end or start
+        ref_date = period_end or period_start
+        stmt_month = f"{ref_date.year:04d}-{ref_date.month:02d}" if ref_date else None
+
+        # Duplicate EC check: only enforced for 'estado_cuenta' imports
+        effective_import_type = data.import_type or import_record.import_type or "estado_cuenta"
+        if stmt_month and data.account_id and effective_import_type == "estado_cuenta":
+            existing_import = session.exec(
+                select(ImportFile).where(
+                    and_(
+                        ImportFile.account_id == data.account_id,
+                        ImportFile.statement_month == stmt_month,
+                        ImportFile.status == "completed",
+                        ImportFile.id != import_id,
+                        ImportFile.import_type == "estado_cuenta",
+                    )
+                )
+            ).first()
+            if existing_import:
+                month_label = _format_period_label(existing_import.period_start, existing_import.period_end) or stmt_month
+                raise HTTPException(
+                    status_code=409,
+                    detail=f"Ya existe un estado de cuenta confirmado para {month_label} en esta cuenta (importación #{existing_import.id}). Elimina el anterior antes de volver a importar.",
+                )
+
         saved = 0
-        skipped = 0
+        skipped = unselected_count
+        national_total_clp = 0.0
+        international_total_clp = 0.0
+        international_total_usd = 0.0
+        payable_national_clp = 0.0
+        payable_international_clp = 0.0
+        account = session.get(Account, data.account_id)
+        # Apply CC-specific income guard for credit card account statements and TC movements
+        is_credit_card_account = bool(account and account.account_type == "tarjeta_credito")
+        apply_cc_income_guard = is_credit_card_account and effective_import_type in ("estado_cuenta", "movimientos_tc")
         for row in preview_rows:
             if data.skip_duplicates and row.is_duplicate:
                 skipped += 1
@@ -187,7 +339,8 @@ def confirm_import(
                 skipped += 1
                 continue
 
-            suggestion = suggest_category(row.description or "", row.amount or 0)
+            description = row.description or "Sin descripción"
+            suggestion = suggest_category(description, row.amount or 0)
             cat_id = None
             if suggestion["category"]:
                 cat = session.exec(select(Category).where(Category.name == suggestion["category"])).first()
@@ -200,24 +353,53 @@ def confirm_import(
             # Installment metadata from parser
             inst_current = raw_data.get("installment_current")
             inst_total = raw_data.get("installment_total")
-            inst_base: Optional[float] = None
-            if inst_total and inst_total > 0 and row.amount is not None:
-                inst_base = round(abs(row.amount) / inst_total, 2)
+            # Use the per-installment amount stored by the parser (valor_cuota).
+            # Do NOT derive it from row.amount/inst_total because row.amount is already
+            # the cuota amount after the parser fix — dividing again would be wrong.
+            inst_base: Optional[float] = raw_data.get("installment_base_amount") or None
+
+            # Fallback installment detection from description patterns like "CF 02-03".
+            parsed_installment = _extract_installment_from_description(description)
+            if inst_current is None and inst_total is None and parsed_installment:
+                inst_current, inst_total = parsed_installment
+
+            is_installment = inst_total is not None
+
+            # Guardrail: installments are always expense/debt movements.
+            if is_installment:
+                transaction_type = "expense"
+            # For credit-card statements/TC movements, avoid classifying positive purchase rows as income
+            # unless they clearly look like real inflows (abono/deposito/etc.).
+            elif apply_cc_income_guard and transaction_type == "income" and not _looks_like_income_description(description):
+                transaction_type = "expense"
+
+            amount = float(row.amount or 0)
+            local_amount = float(row.local_amount if row.local_amount is not None else amount)
+            if transaction_type == "expense":
+                amount = -abs(amount)
+                local_amount = -abs(local_amount)
+            elif transaction_type == "income":
+                amount = abs(amount)
+                local_amount = abs(local_amount)
+            elif transaction_type == "transfer":
+                amount = abs(amount)
+                local_amount = abs(local_amount)
 
             # Unfactured purchase (0/N): mark as pending, not confirmed
             tx_status = "pending" if inst_current == 0 else "confirmed"
 
             t = Transaction(
                 date=tx_date,
-                description=row.description or "Sin descripción",
-                amount=row.amount,
+                description=description,
+                amount=amount,
+                local_amount=local_amount,
                 transaction_type=transaction_type,
                 account_id=data.account_id,
                 source=import_record.file_type,
                 category_id=cat_id,
                 is_ant_expense=suggestion.get("is_ant_expense", False),
                 is_fixed_expense=bool(raw_data.get("is_fixed_expense") or suggestion.get("is_fixed_expense")),
-                is_debt=bool(raw_data.get("is_debt") or suggestion.get("is_debt") or inst_total is not None),
+                is_debt=bool(raw_data.get("is_debt") or suggestion.get("is_debt") or is_installment),
                 is_transfer=transaction_type == "transfer",
                 is_international=bool(row.is_international),
                 is_paid=inst_current != 0,
@@ -232,11 +414,47 @@ def confirm_import(
             session.add(t)
             saved += 1
 
+            is_new_debt = inst_current == 0 and (inst_total or 0) > 1
+            if transaction_type != "expense":
+                # Import totals represent billed outflows only (not incomes/refunds).
+                continue
+
+            if row.is_international:
+                usd_amount = row.original_amount if row.original_currency == "USD" and row.original_amount is not None else abs(amount)
+                international_total_usd += abs(float(usd_amount))
+                international_total_clp += abs(local_amount)
+                if not is_new_debt:
+                    payable_international_clp += abs(local_amount)
+            else:
+                national_total_clp += abs(amount)
+                if not is_new_debt:
+                    payable_national_clp += abs(amount)
+
         import_record.status = "completed"
         import_record.transaction_count = saved
         import_record.account_id = data.account_id
         import_record.period_start = period_start
         import_record.period_end = period_end
+        import_record.statement_month = stmt_month
+        import_record.import_type = effective_import_type
+        import_record.statement_credit_limit_clp = statement_credit_metrics.get("statement_credit_limit_clp")
+        import_record.statement_available_credit_clp = statement_credit_metrics.get("statement_available_credit_clp")
+        import_record.national_total_clp = round(national_total_clp, 2)
+        import_record.international_total_clp = round(international_total_clp, 2)
+        import_record.international_total_usd = round(international_total_usd, 2)
+        import_record.import_total_clp = round(national_total_clp + international_total_clp, 2)
+        import_record.payable_national_clp = round(payable_national_clp, 2)
+        import_record.payable_international_clp = round(payable_international_clp, 2)
+        import_record.payable_total_clp = round(payable_national_clp + payable_international_clp, 2)
+
+        if account and is_credit_card_account and effective_import_type == "estado_cuenta":
+            statement_limit = import_record.statement_credit_limit_clp
+            if statement_limit is not None and statement_limit > 0:
+                # Keep TC credit limit aligned with the latest confirmed statement.
+                account.balance = float(statement_limit)
+                account.updated_at = datetime.utcnow()
+                session.add(account)
+
         session.add(import_record)
         session.commit()
 
@@ -465,7 +683,55 @@ def _enrich_import_file(import_record: ImportFile, session: Session) -> ImportFi
     data = import_record.model_dump()
     data["account_name"] = _get_account_name(session, import_record.account_id)
     data["period_label"] = _format_period_label(import_record.period_start, import_record.period_end)
+
+    # Recompute from persisted transactions to keep historical imports consistent
+    # even if totals columns were added after those imports were created.
+    if import_record.id and import_record.status == "completed":
+        totals = _compute_import_totals_from_transactions(session, import_record.id)
+        if totals:
+            data.update(totals)
+
     return ImportFileRead(**data)
+
+
+def _compute_import_totals_from_transactions(session: Session, import_id: int) -> Optional[dict]:
+    txs = session.exec(select(Transaction).where(Transaction.import_file_id == import_id)).all()
+    if not txs:
+        return None
+
+    national_total_clp = 0.0
+    international_total_clp = 0.0
+    international_total_usd = 0.0
+    payable_national_clp = 0.0
+    payable_international_clp = 0.0
+
+    for tx in txs:
+        if tx.transaction_type != "expense":
+            continue
+        amount = float(tx.amount or 0)
+        local_amount = float(tx.local_amount if tx.local_amount is not None else amount)
+        is_new_debt = tx.installment_current == 0 and (tx.installment_total or 0) > 1
+
+        if tx.is_international:
+            usd_amount = tx.original_amount if tx.original_currency == "USD" and tx.original_amount is not None else abs(amount)
+            international_total_usd += abs(float(usd_amount))
+            international_total_clp += abs(local_amount)
+            if not is_new_debt:
+                payable_international_clp += abs(local_amount)
+        else:
+            national_total_clp += abs(amount)
+            if not is_new_debt:
+                payable_national_clp += abs(amount)
+
+    return {
+        "national_total_clp": round(national_total_clp, 2),
+        "international_total_clp": round(international_total_clp, 2),
+        "international_total_usd": round(international_total_usd, 2),
+        "import_total_clp": round(national_total_clp + international_total_clp, 2),
+        "payable_national_clp": round(payable_national_clp, 2),
+        "payable_international_clp": round(payable_international_clp, 2),
+        "payable_total_clp": round(payable_national_clp + payable_international_clp, 2),
+    }
 
 
 def _detect_preview_period(preview_rows: List[ImportPreviewRow]) -> tuple[Optional[date], Optional[date]]:

@@ -1,13 +1,11 @@
 """
 Initial seed data for development and demo purposes.
-Creates: categories, family account, demo user, accounts, transactions, fixed expenses, savings goals, budgets.
+Creates: categories, accounts, transactions, fixed expenses, savings goals, budgets.
 """
 from datetime import date, datetime, timedelta
 from random import choice, randint, uniform
 from sqlmodel import Session, select
 
-from app.models.family_account import FamilyAccount
-from app.models.user import User
 from app.models.account import Account
 from app.models.category import Category
 from app.models.transaction import Transaction
@@ -64,15 +62,6 @@ def seed_all(session: Session) -> None:
 
     print("🌱 Seeding initial data...")
 
-    # --- Family account & user ---
-    family = FamilyAccount(name="Mi Familia", plan="free")
-    session.add(family)
-    session.flush()
-
-    user = User(name="Usuario Demo", email="demo@finanzas.local", role="owner", family_account_id=family.id)
-    session.add(user)
-    session.flush()
-
     # --- Categories ---
     cat_map: dict[str, int] = {}
     for cat_def in CATEGORIES:
@@ -101,7 +90,6 @@ def seed_all(session: Session) -> None:
         currency="CLP",
         is_active=True,
         source="manual",
-        user_id=user.id,
     )
     account2 = Account(
         name="Cuenta Vista Banco Santander",
@@ -111,7 +99,6 @@ def seed_all(session: Session) -> None:
         currency="CLP",
         is_active=True,
         source="manual",
-        user_id=user.id,
     )
     account3 = Account(
         name="Tarjeta de Crédito Falabella",
@@ -121,7 +108,6 @@ def seed_all(session: Session) -> None:
         currency="CLP",
         is_active=True,
         source="manual",
-        user_id=user.id,
     )
     session.add_all([account1, account2, account3])
     session.flush()
@@ -184,7 +170,8 @@ def seed_all(session: Session) -> None:
 
     # --- Fixed expenses ---
     fixed_expenses = [
-        {"name": "Dividendo Hipotecario", "cat": "Vivienda", "amount": 420_000, "day": 6, "type": "dividendo"},
+        {"name": "Dividendo Hipotecario", "cat": "Vivienda", "amount": 420_000, "day": 6, "type": "dividendo", "start_date": date(2024, 1, 1), "total_installments": 240, "remaining_installments": 212},
+        {"name": "Dividendo Hipotecario", "cat": "Vivienda", "amount": 14.5, "currency": "UF", "day": 6, "type": "dividendo", "start_date": date(2024, 1, 1), "total_installments": 240, "remaining_installments": 212},
         {"name": "Colegio San Pedro", "cat": "Educación", "amount": 95_000, "day": 10, "type": "colegio"},
         {"name": "Isapre Consalud", "cat": "Salud", "amount": 62_000, "day": 24, "type": "seguro"},
         {"name": "Gastos Comunes", "cat": "Vivienda", "amount": 38_000, "day": 14, "type": "servicio"},
@@ -195,10 +182,14 @@ def seed_all(session: Session) -> None:
             name=fe_data["name"],
             category_id=cat_map.get(fe_data["cat"]),
             expected_amount=fe_data["amount"],
+            currency=fe_data.get("currency", "CLP"),
+            start_date=fe_data.get("start_date"),
             payment_day=fe_data["day"],
             account_id=account1.id,
             is_active=True,
             expense_type=fe_data["type"],
+            total_installments=fe_data.get("total_installments"),
+            remaining_installments=fe_data.get("remaining_installments"),
         )
         session.add(fe)
 

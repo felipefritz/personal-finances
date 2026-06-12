@@ -35,6 +35,7 @@ import { formatCurrency } from '../utils/formatters';
 import PageHeader from '../components/common/PageHeader';
 import LoadingSpinner from '../components/common/LoadingSpinner';
 import ConfirmDialog from '../components/common/ConfirmDialog';
+import CategoryAutocomplete from '../components/common/CategoryAutocomplete';
 
 const INCOME_TYPES = [
   { value: 'sueldo', label: 'Sueldo' },
@@ -227,19 +228,12 @@ export default function RecurringIncomesPage() {
               fullWidth
               inputProps={{ min: 1, max: 31 }}
             />
-            <TextField
-              select
+            <CategoryAutocomplete
+              categories={categories}
               label="Categoría (opcional)"
-              value={form.category_id ?? ''}
-              onChange={(e) => setForm({ ...form, category_id: e.target.value ? Number(e.target.value) : undefined })}
-              size="small"
-              fullWidth
-            >
-              <MenuItem value="">Sin categoría</MenuItem>
-              {incomeCategories.map((c: { id: number; name: string }) => (
-                <MenuItem key={c.id} value={c.id}>{c.name}</MenuItem>
-              ))}
-            </TextField>
+              value={form.category_id ?? null}
+              onChange={(id) => setForm({ ...form, category_id: id ?? undefined })}
+            />
             <TextField
               select
               label="Cuenta destino (opcional)"

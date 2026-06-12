@@ -59,6 +59,16 @@ function parseStatementDate(value?: string): Date | null {
   return Number.isNaN(d.getTime()) ? null : d;
 }
 
+function formatPreviewDate(value?: string): string {
+  const parsed = parseStatementDate(value);
+  if (!parsed) return '—';
+  return new Intl.DateTimeFormat('es-CL', {
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+  }).format(parsed);
+}
+
 function getImportStatusChip(status: string) {
   switch (status) {
     case 'completed':
@@ -94,6 +104,8 @@ export default function ImportsPage() {
   const [pdfPassword, setPdfPassword] = useState('');
   const [savePasswordForAccount, setSavePasswordForAccount] = useState(true);
   const [deleteImportId, setDeleteImportId] = useState<number | null>(null);
+  const [selectedRowIndexes, setSelectedRowIndexes] = useState<number[]>([]);
+  const [importType, setImportType] = useState<string>('estado_cuenta');
 
   const { data: accounts = [] } = useQuery({ queryKey: ['accounts'], queryFn: getAccounts });
   const { data: imports = [] } = useQuery({ queryKey: ['import-files'], queryFn: getImportFiles });
@@ -103,26 +115,38 @@ export default function ImportsPage() {
     enabled: Boolean(accountId),
   });
 
-  const uploadExcelMut = useMutation({ mutationFn: ({ file, accountId }: { file: File; accountId?: number }) => uploadExcel(file, accountId) });
+  const uploadExcelMut = useMutation({ mutationFn: ({ file, accountId, importType }: { file: File; accountId?: number; importType?: string }) => uploadExcel(file, accountId, importType) });
   const uploadPdfMut = useMutation({
     mutationFn: ({
       file,
       accountId,
       pdfPassword,
       savePdfPassword,
+      importType,
     }: {
       file: File;
       accountId?: number;
       pdfPassword?: string;
       savePdfPassword?: boolean;
-    }) => uploadPdf(file, accountId, pdfPassword, savePdfPassword),
+      importType?: string;
+    }) => uploadPdf(file, accountId, pdfPassword, savePdfPassword, importType),
   });
   const confirmMut = useMutation({
     mutationFn: ({ importFileId, accountId }: { importFileId: number; accountId: number }) =>
-      confirmImport(importFileId, accountId, isPdfProtected ? pdfPassword : undefined),
+      confirmImport(
+        importFileId,
+        accountId,
+        isPdfProtected ? pdfPassword : undefined,
+        undefined,
+        selectedRowIndexes,
+        importType,
+      ),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['transactions'] });
       qc.invalidateQueries({ queryKey: ['import-files'] });
+    },
+    onError: (e: Error) => {
+      setError(e.message);
     },
   });
 
@@ -154,8 +178,16 @@ export default function ImportsPage() {
           accountId: selectedAccountId,
           pdfPassword: isPdfProtected ? pdfPassword : undefined,
           savePdfPassword: savePasswordForAccount,
+          importType,
         })
-      : uploadExcelMut.mutateAsync({ file, accountId: selectedAccountId });
+      : uploadExcelMut.mutateAsync({ file, accountId: selectedAccountId, importType });
+  };
+
+  const applyDefaultRowSelection = (result: ImportPreviewResponse) => {
+    const defaultRows = result.preview_rows
+      .filter((row) => !row.is_duplicate)
+      .map((row) => row.row_index);
+    setSelectedRowIndexes(defaultRows);
   };
 
   const handleFile = async (file: File) => {
@@ -170,6 +202,7 @@ export default function ImportsPage() {
       }
       const result = await processSelectedFile(file, accountId);
       setPreview(result);
+      applyDefaultRowSelection(result);
       setPendingFile(null);
     } catch (e) {
       const msg = e instanceof Error ? e.message : 'Error al subir archivo';
@@ -184,44 +217,96 @@ export default function ImportsPage() {
   };
 
   const totalPreview = useMemo(
-    () => (preview?.preview_rows || []).reduce((s, r) => s + (r.amount || 0), 0),
-    [preview]
+    () =>
+      (preview?.preview_rows || [])
+        .filter((r) => selectedRowIndexes.includes(r.row_index))
+        .reduce(
+        (s, r) => s + (r.is_international ? (r.local_amount ?? r.amount ?? 0) : (r.amount ?? 0)),
+        0,
+      ),
+    [preview, selectedRowIndexes]
   );
 
   const intlRows = useMemo(
-    () => (preview?.preview_rows || []).filter((r) => r.is_international),
-    [preview]
+    () => (preview?.preview_rows || []).filter((r) => selectedRowIndexes.includes(r.row_index) && r.is_international),
+    [preview, selectedRowIndexes]
   );
 
   const nationalRows = useMemo(
-    () => (preview?.preview_rows || []).filter((r) => !r.is_international),
-    [preview]
+    () => (preview?.preview_rows || []).filter((r) => selectedRowIndexes.includes(r.row_index) && !r.is_international),
+    [preview, selectedRowIndexes]
   );
 
-  const intlByCurrency = useMemo(() => {
-    const acc: Record<string, { count: number; originalTotal: number; localTotal: number }> = {};
-    for (const row of intlRows) {
-      const ccy = normalizeCurrencyCode(row.original_currency);
-      if (!acc[ccy]) {
-        acc[ccy] = { count: 0, originalTotal: 0, localTotal: 0 };
-      }
-      acc[ccy].count += 1;
-      acc[ccy].originalTotal += Math.abs(row.original_amount || 0);
-      acc[ccy].localTotal += Math.abs(row.amount || 0);
-    }
-    return Object.entries(acc)
-      .map(([currency, data]) => ({ currency, ...data }))
-      .sort((a, b) => b.originalTotal - a.originalTotal);
-  }, [intlRows]);
-
+  // Sum international rows in local currency (CLP) using local_amount when available.
   const intlLocalTotal = useMemo(
-    () => intlRows.reduce((s, r) => s + (r.amount || 0), 0),
+    () => intlRows.reduce((s, r) => s + (r.local_amount ?? r.amount ?? 0), 0),
+    [intlRows]
+  );
+
+  const intlUsdTotal = useMemo(
+    () => intlRows.reduce((s, r) => s + (r.amount ?? 0), 0),
     [intlRows]
   );
 
   const nationalTotal = useMemo(
     () => nationalRows.reduce((s, r) => s + (r.amount || 0), 0),
     [nationalRows]
+  );
+
+  const installmentRows = useMemo(
+    () => (preview?.preview_rows || []).filter((r) => {
+      if (!selectedRowIndexes.includes(r.row_index)) return false;
+      const tot = r.raw_data?.installment_total as number | null;
+      const cur = r.raw_data?.installment_current as number | null;
+      return tot != null && tot > 1 && cur != null && cur > 0;
+    }),
+    [preview, selectedRowIndexes]
+  );
+
+  const installmentTotal = useMemo(
+    () => installmentRows.reduce((s, r) => s + Math.abs(r.amount || 0), 0),
+    [installmentRows]
+  );
+
+  const newDebtRows = useMemo(
+    () => (preview?.preview_rows || []).filter((r) => {
+      if (!selectedRowIndexes.includes(r.row_index)) return false;
+      const tot = r.raw_data?.installment_total as number | null;
+      const cur = r.raw_data?.installment_current as number | null;
+      return tot != null && tot > 1 && cur === 0;
+    }),
+    [preview, selectedRowIndexes]
+  );
+
+  const allRowIndexes = useMemo(
+    () => (preview?.preview_rows || []).map((row) => row.row_index),
+    [preview]
+  );
+
+  const allSelected = allRowIndexes.length > 0 && selectedRowIndexes.length === allRowIndexes.length;
+  const someSelected = selectedRowIndexes.length > 0 && selectedRowIndexes.length < allRowIndexes.length;
+
+  const toggleSelectAllRows = (checked: boolean) => {
+    if (checked) {
+      setSelectedRowIndexes(allRowIndexes);
+      return;
+    }
+    setSelectedRowIndexes([]);
+  };
+
+  const toggleRowSelection = (rowIndex: number, checked: boolean) => {
+    setSelectedRowIndexes((prev) => {
+      if (checked) {
+        if (prev.includes(rowIndex)) return prev;
+        return [...prev, rowIndex];
+      }
+      return prev.filter((idx) => idx !== rowIndex);
+    });
+  };
+
+  const newDebtMonthlyTotal = useMemo(
+    () => newDebtRows.reduce((s, r) => s + Math.abs(r.amount || 0), 0),
+    [newDebtRows]
   );
 
   const detectedPeriod = useMemo(() => {
@@ -256,6 +341,19 @@ export default function ImportsPage() {
             >
               <MenuItem value="">Sin cuenta específica</MenuItem>
               {accounts.map((a) => <MenuItem key={a.id} value={a.id}>{a.name}</MenuItem>)}
+            </TextField>
+
+            <TextField
+              select
+              label="Tipo de importación"
+              value={importType}
+              onChange={(e) => setImportType(e.target.value)}
+              size="small"
+              sx={{ maxWidth: 340 }}
+            >
+              <MenuItem value="estado_cuenta">Estado de cuenta (EC mensual tarjeta)</MenuItem>
+              <MenuItem value="movimientos_tc">Movimientos TC (detalle tarjeta de crédito)</MenuItem>
+              <MenuItem value="movimientos">Movimientos de cuenta (corriente / ahorro / vista)</MenuItem>
             </TextField>
 
             <FormControlLabel
@@ -340,6 +438,7 @@ export default function ImportsPage() {
                     try {
                       const result = await processSelectedFile(pendingFile, accountId);
                       setPreview(result);
+                      applyDefaultRowSelection(result);
                       setPendingFile(null);
                     } catch (e) {
                       const msg = e instanceof Error ? e.message : 'Error al procesar archivo pendiente';
@@ -388,7 +487,7 @@ export default function ImportsPage() {
                   importFileId: preview.import_file_id,
                   accountId: accountId || 1,
                 })}
-                disabled={confirmMut.isPending || !accountId}
+                disabled={confirmMut.isPending || !accountId || selectedRowIndexes.length === 0}
               >
                 {confirmMut.isPending ? 'Importando...' : 'Confirmar Importación'}
               </Button>
@@ -396,6 +495,7 @@ export default function ImportsPage() {
 
             <Stack direction="row" spacing={1} mb={2} flexWrap="wrap">
               <Chip label={`Total: ${formatCurrency(totalPreview)}`} />
+              <Chip label={`Seleccionadas: ${selectedRowIndexes.length}`} color={selectedRowIndexes.length ? 'primary' : 'default'} />
               <Chip label={`Nuevas: ${preview.total_rows - preview.duplicate_count}`} color="success" />
               <Chip label={`Duplicadas: ${preview.duplicate_count}`} color="default" />
               {nationalRows.length > 0 && (
@@ -404,20 +504,27 @@ export default function ImportsPage() {
               {intlRows.length > 0 && (
                 <Chip
                   icon={<LanguageIcon />}
-                  label={`Internacional (equiv. local): ${intlRows.length} mov. (${formatCurrency(intlLocalTotal)})`}
+                  label={`Internacional: ${intlRows.length} mov. (${formatCurrency(intlLocalTotal)} equiv. CLP)`}
                   color="primary"
                   variant="outlined"
                 />
               )}
-              {intlByCurrency.map((g) => (
+              {installmentRows.length > 0 && (
                 <Chip
-                  key={g.currency}
-                  icon={<LanguageIcon />}
-                  label={`${g.currency}: ${g.originalTotal.toLocaleString('es-CL', { minimumFractionDigits: 0, maximumFractionDigits: 2 })} (${g.count} mov.)`}
-                  color="primary"
+                  label={`En cuotas: ${installmentRows.length} mov. (${formatCurrency(installmentTotal)})`}
+                  color="secondary"
                   variant="outlined"
                 />
-              ))}
+              )}
+              {newDebtRows.length > 0 && (
+                <Tooltip title={`${newDebtRows.length} compras nuevas a cuotas (cuota 0/N). No se cobran este mes — se proyectan a partir del mes siguiente.`}>
+                  <Chip
+                    label={`Nueva deuda: ${newDebtRows.length} mov. (${formatCurrency(newDebtMonthlyTotal)}/mes)`}
+                    color="warning"
+                    variant="outlined"
+                  />
+                </Tooltip>
+              )}
             </Stack>
 
             {detectedPeriod && (
@@ -431,6 +538,14 @@ export default function ImportsPage() {
               <Table size="small" stickyHeader>
                 <TableHead>
                   <TableRow>
+                    <TableCell padding="checkbox">
+                      <Checkbox
+                        checked={allSelected}
+                        indeterminate={someSelected}
+                        onChange={(e) => toggleSelectAllRows(e.target.checked)}
+                        inputProps={{ 'aria-label': 'Seleccionar todos los movimientos' }}
+                      />
+                    </TableCell>
                     <TableCell>Fecha</TableCell>
                     <TableCell>Descripción</TableCell>
                     <TableCell align="right">Monto</TableCell>
@@ -445,22 +560,57 @@ export default function ImportsPage() {
                       key={i}
                       sx={row.is_international ? { bgcolor: 'primary.50' } : undefined}
                     >
-                      <TableCell>{row.date ? formatDate(row.date) : '—'}</TableCell>
+                      <TableCell padding="checkbox">
+                        <Checkbox
+                          checked={selectedRowIndexes.includes(row.row_index)}
+                          onChange={(e) => toggleRowSelection(row.row_index, e.target.checked)}
+                          inputProps={{ 'aria-label': `Seleccionar movimiento ${row.description || row.row_index}` }}
+                        />
+                      </TableCell>
+                      <TableCell>{formatPreviewDate(row.date)}</TableCell>
                       <TableCell>{row.description}</TableCell>
                       <TableCell align="right">
-                        {formatCurrency(row.amount ?? 0)}
-                        {row.is_international && row.original_amount && row.original_currency && (
+                        {row.is_international && row.local_amount != null
+                          ? formatCurrency(row.local_amount)
+                          : formatCurrency(row.amount ?? 0, row.is_international ? 'USD' : 'CLP')}
+                        {row.is_international && row.local_amount != null && (
                           <Typography variant="caption" color="text.secondary" display="block">
-                            {row.original_currency} {row.original_amount.toLocaleString('es-CL')}
+                            {formatCurrency(row.amount ?? 0, 'USD')}
                           </Typography>
                         )}
+                        {row.is_international && row.original_amount && row.original_currency &&
+                          normalizeCurrencyCode(row.original_currency) !== 'USD' &&
+                          normalizeCurrencyCode(row.original_currency) !== 'CLP' && (
+                          <Typography variant="caption" color="text.secondary" display="block">
+                            {normalizeCurrencyCode(row.original_currency)} {row.original_amount.toLocaleString('es-CL', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                          </Typography>
+                        )}
+                        {(() => {
+                          const cur = row.raw_data?.installment_current as number | null;
+                          const tot = row.raw_data?.installment_total as number | null;
+                          if (cur != null && tot != null && tot > 1) {
+                            if (cur === 0) {
+                              return (
+                                <Typography variant="caption" color="warning.main" display="block">
+                                  nueva deuda · 0/{tot} cuotas
+                                </Typography>
+                              );
+                            }
+                            return (
+                              <Typography variant="caption" color="text.secondary" display="block">
+                                cuota {cur}/{tot}
+                              </Typography>
+                            );
+                          }
+                          return null;
+                        })()}
                       </TableCell>
                       <TableCell>
                         {row.is_international ? (
                           <Chip
                             size="small"
                             icon={<LanguageIcon />}
-                            label={normalizeCurrencyCode(row.original_currency)}
+                            label="USD"
                             color="primary"
                             variant="outlined"
                           />
@@ -478,6 +628,50 @@ export default function ImportsPage() {
                       </TableCell>
                     </TableRow>
                   ))}
+
+                  <TableRow sx={{ bgcolor: 'grey.100' }}>
+                    <TableCell colSpan={3} sx={{ fontWeight: 700 }}>TOTAL NACIONAL</TableCell>
+                    <TableCell align="right" sx={{ fontWeight: 700 }}>
+                      {formatCurrency(nationalTotal, 'CLP')}
+                    </TableCell>
+                    <TableCell>
+                      <Chip size="small" label="CLP" variant="outlined" />
+                    </TableCell>
+                    <TableCell colSpan={2} sx={{ color: 'text.secondary' }}>
+                      {nationalRows.length} movimientos
+                    </TableCell>
+                  </TableRow>
+
+                  <TableRow sx={{ bgcolor: 'primary.50' }}>
+                    <TableCell colSpan={3} sx={{ fontWeight: 700 }}>TOTAL INTERNACIONAL</TableCell>
+                    <TableCell align="right" sx={{ fontWeight: 700, color: 'primary.main' }}>
+                      {formatCurrency(intlLocalTotal, 'CLP')}
+                      {intlRows.length > 0 && (
+                        <Typography variant="caption" color="text.secondary" display="block">
+                          Ref. USD: {formatCurrency(intlUsdTotal, 'USD')}
+                        </Typography>
+                      )}
+                    </TableCell>
+                    <TableCell>
+                      <Chip size="small" icon={<LanguageIcon />} label="INTL→CLP" color="primary" variant="outlined" />
+                    </TableCell>
+                    <TableCell colSpan={2} sx={{ color: 'text.secondary' }}>
+                      {intlRows.length} movimientos
+                    </TableCell>
+                  </TableRow>
+
+                  <TableRow sx={{ bgcolor: 'success.50' }}>
+                    <TableCell colSpan={3} sx={{ fontWeight: 800 }}>TOTAL GENERAL</TableCell>
+                    <TableCell align="right" sx={{ fontWeight: 800, color: 'success.dark' }}>
+                      {formatCurrency(totalPreview, 'CLP')}
+                    </TableCell>
+                    <TableCell>
+                      <Chip size="small" label="CLP" color="success" variant="outlined" />
+                    </TableCell>
+                    <TableCell colSpan={2} sx={{ color: 'text.secondary' }}>
+                      {selectedRowIndexes.length} movimientos seleccionados
+                    </TableCell>
+                  </TableRow>
                 </TableBody>
               </Table>
             </TableContainer>
@@ -487,8 +681,8 @@ export default function ImportsPage() {
                 Importación completada: {confirmMut.data.saved} guardadas, {confirmMut.data.skipped} omitidas.
               </Alert>
             )}
-            {confirmMut.isError && (
-              <Alert severity="error" sx={{ mt: 2 }}>Error al confirmar importación.</Alert>
+            {confirmMut.isError && error && (
+              <Alert severity="error" sx={{ mt: 2 }}>{error}</Alert>
             )}
           </CardContent>
         </Card>
@@ -509,6 +703,7 @@ export default function ImportsPage() {
                   <TableCell>Tipo</TableCell>
                   <TableCell>Estado</TableCell>
                   <TableCell>Filas</TableCell>
+                  <TableCell>Totales</TableCell>
                   <TableCell>Fecha</TableCell>
                   <TableCell align="right">Acciones</TableCell>
                 </TableRow>
@@ -523,7 +718,20 @@ export default function ImportsPage() {
                     <TableCell>{imp.filename}</TableCell>
                     <TableCell>{imp.account_name ?? 'Sin cuenta'}</TableCell>
                     <TableCell>{imp.period_label ?? 'Sin periodo detectado'}</TableCell>
-                    <TableCell>{imp.file_type}</TableCell>
+                    <TableCell>
+                      <Stack spacing={0.25}>
+                        <Typography variant="caption">{imp.file_type}</Typography>
+                        <Chip
+                          size="small"
+                          variant="outlined"
+                          label={
+                            imp.import_type === 'movimientos' ? 'Movimientos' :
+                            imp.import_type === 'movimientos_tc' ? 'Mov. TC' :
+                            'Estado cuenta'
+                          }
+                        />
+                      </Stack>
+                    </TableCell>
                     <TableCell>
                       <Chip
                         size="small"
@@ -532,6 +740,30 @@ export default function ImportsPage() {
                       />
                     </TableCell>
                     <TableCell>{imp.transaction_count ?? 0}</TableCell>
+                    <TableCell>
+                      <Stack spacing={0.25}>
+                        <Typography variant="caption" color="text.secondary">
+                          Nac mov: {formatCurrency(imp.national_total_clp ?? 0, 'CLP')}
+                        </Typography>
+                        <Typography variant="caption" color="text.secondary">
+                          Intl mov CLP: {formatCurrency(imp.international_total_clp ?? 0, 'CLP')}
+                        </Typography>
+                        {(imp.international_total_usd ?? 0) !== 0 && (
+                          <Typography variant="caption" color="text.secondary">
+                            Intl USD: {formatCurrency(imp.international_total_usd ?? 0, 'USD')}
+                          </Typography>
+                        )}
+                        <Typography variant="caption" fontWeight={700} color="warning.main">
+                          Nac a pagar: {formatCurrency(imp.payable_national_clp ?? imp.national_total_clp ?? 0, 'CLP')}
+                        </Typography>
+                        <Typography variant="caption" fontWeight={700} color="warning.main">
+                          Intl a pagar CLP: {formatCurrency(imp.payable_international_clp ?? imp.international_total_clp ?? 0, 'CLP')}
+                        </Typography>
+                        <Typography variant="caption" fontWeight={700}>
+                          Total a pagar CLP: {formatCurrency(imp.payable_total_clp ?? imp.import_total_clp ?? 0, 'CLP')}
+                        </Typography>
+                      </Stack>
+                    </TableCell>
                     <TableCell>{imp.imported_at ? formatDate(imp.imported_at) : '—'}</TableCell>
                     <TableCell align="right">
                       <Tooltip title="Eliminar cartola y movimientos relacionados">
@@ -546,7 +778,7 @@ export default function ImportsPage() {
                   </TableRow>
                 ))}
                 {imports.length === 0 && (
-                  <TableRow><TableCell colSpan={8} align="center">Sin importaciones previas</TableCell></TableRow>
+                  <TableRow><TableCell colSpan={9} align="center">Sin importaciones previas</TableCell></TableRow>
                 )}
               </TableBody>
             </Table>

@@ -29,13 +29,38 @@ def _is_excel_total_row(row: Dict[str, Any]) -> bool:
 
 def parse_excel(
     file_bytes: bytes,
+    filename: Optional[str] = None,
     column_mapping: Optional[ColumnMapping] = None,
 ) -> Tuple[List[str], List[Dict[str, Any]]]:
     """
     Parse an Excel file and return (columns, rows).
     rows is a list of raw dicts (column -> value).
     """
-    df = pd.read_excel(io.BytesIO(file_bytes), engine="openpyxl")
+    _ = column_mapping  # Reserved for future direct mapping support.
+    ext = ""
+    if filename and "." in filename:
+        ext = filename.rsplit(".", 1)[-1].lower()
+
+    if ext == "csv":
+        # Try common encodings used by bank exports.
+        try:
+            df = pd.read_csv(io.BytesIO(file_bytes), encoding="utf-8-sig")
+        except Exception:
+            df = pd.read_csv(io.BytesIO(file_bytes), encoding="latin-1")
+    elif ext == "xls":
+        # Legacy Excel files are usually BIFF8; let pandas infer engine first.
+        try:
+            df = pd.read_excel(io.BytesIO(file_bytes))
+        except Exception:
+            # Some xls exports can still be opened by openpyxl-converted formats.
+            df = pd.read_excel(io.BytesIO(file_bytes), engine="openpyxl")
+    else:
+        # Default path for xlsx and unknown spreadsheet-like formats.
+        try:
+            df = pd.read_excel(io.BytesIO(file_bytes), engine="openpyxl")
+        except Exception:
+            df = pd.read_excel(io.BytesIO(file_bytes))
+
     df = df.dropna(how="all")
     columns = list(df.columns.astype(str))
     rows = df.to_dict(orient="records")

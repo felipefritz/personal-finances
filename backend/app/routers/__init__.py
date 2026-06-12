@@ -6,7 +6,6 @@ from app.routers.fixed_expenses import router as fixed_expenses_router
 from app.routers.savings_goals import router as savings_goals_router
 from app.routers.budgets import router as budgets_router
 from app.routers.imports import router as imports_router
-from app.routers.agent import router as agent_router
 from app.routers.bank_connections import router as bank_connections_router
 from app.routers.exchange_rates import router as exchange_rates_router
 from app.routers.recurring_incomes import router as recurring_incomes_router
@@ -21,7 +20,6 @@ __all__ = [
     "savings_goals_router",
     "budgets_router",
     "imports_router",
-    "agent_router",
     "bank_connections_router",
     "exchange_rates_router",
     "recurring_incomes_router",

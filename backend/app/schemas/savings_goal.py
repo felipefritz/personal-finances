@@ -63,3 +63,48 @@ class SavingsGoalPlanResponse(BaseModel):
     other_goals_monthly_commitment: float
     available_liquid_balance: float
     message: str
+
+
+class SavingsDistributionGoalItem(BaseModel):
+    goal_id: int
+    goal_name: str
+    priority: int
+    target_date: Optional[date] = None
+    remaining_amount: float
+    suggested_monthly_amount: float
+    monthly_needed: Optional[float] = None
+    feasibility: str
+
+
+class SavingsDistributionAccountItem(BaseModel):
+    account_id: int
+    account_name: str
+    account_type: str
+    current_balance: float
+    suggested_monthly_amount: float
+
+
+class SavingsDistributionResponse(BaseModel):
+    projected_monthly_savings: float
+    distribution_to_goals: float
+    distribution_to_accounts: float
+    goals: list[SavingsDistributionGoalItem]
+    savings_accounts: list[SavingsDistributionAccountItem]
+    recommendations: list[str]
+
+
+class SavingsAnnualProjectionMonth(BaseModel):
+    period: str  # YYYY-MM
+    projected_savings: float
+    to_goals: float
+    to_accounts: float
+    cumulative_savings: float
+
+
+class SavingsAnnualProjectionResponse(BaseModel):
+    start_date: date
+    end_date: date
+    months: list[SavingsAnnualProjectionMonth]
+    total_projected_savings: float
+    total_to_goals: float
+    total_to_accounts: float

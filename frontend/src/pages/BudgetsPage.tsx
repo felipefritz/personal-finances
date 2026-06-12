@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   Box,
@@ -19,6 +19,8 @@ import {
   IconButton,
   Alert,
   Divider,
+  FormControlLabel,
+  Checkbox,
 } from '@mui/material';
 import EditIcon from '@mui/icons-material/Edit';
 import DeleteIcon from '@mui/icons-material/Delete';
@@ -31,6 +33,7 @@ import { formatCurrency, MONTH_NAMES } from '../utils/formatters';
 import PageHeader from '../components/common/PageHeader';
 import LoadingSpinner from '../components/common/LoadingSpinner';
 import ConfirmDialog from '../components/common/ConfirmDialog';
+import CategoryAutocomplete from '../components/common/CategoryAutocomplete';
 
 const now = new Date();
 const EMPTY_FORM: Partial<Budget> = {
@@ -38,6 +41,7 @@ const EMPTY_FORM: Partial<Budget> = {
   month: now.getMonth() + 1,
   year: now.getFullYear(),
   expected_amount: 0,
+  is_recurring: false,
 };
 
 export default function BudgetsPage() {
@@ -48,6 +52,7 @@ export default function BudgetsPage() {
   const [editing, setEditing] = useState<Budget | null>(null);
   const [deleteId, setDeleteId] = useState<number | null>(null);
   const [form, setForm] = useState<Partial<Budget>>(EMPTY_FORM);
+  const [selectedRecommendationCategoryId, setSelectedRecommendationCategoryId] = useState<number | ''>('');
 
   const { data: budgets = [], isLoading } = useQuery({
     queryKey: ['budgets', month, year],
@@ -79,6 +84,18 @@ export default function BudgetsPage() {
 
   const totalBudget = budgets.reduce((s, b) => s + b.expected_amount, 0);
   const totalActual = budgets.reduce((s, b) => s + Math.abs(b.actual_amount || 0), 0);
+  const selectedRecommendationItem = recommendation?.items.find((item) => item.category_id === selectedRecommendationCategoryId) ?? recommendation?.items[0];
+
+  useEffect(() => {
+    if (!recommendation?.items.length) {
+      setSelectedRecommendationCategoryId('');
+      return;
+    }
+    const exists = recommendation.items.some((item) => item.category_id === selectedRecommendationCategoryId);
+    if (!exists) {
+      setSelectedRecommendationCategoryId(recommendation.items[0].category_id);
+    }
+  }, [recommendation, selectedRecommendationCategoryId]);
 
   if (isLoading) return <LoadingSpinner />;
 
@@ -134,33 +151,55 @@ export default function BudgetsPage() {
               )}
             </Stack>
 
-            <Grid container spacing={2}>
-              {recommendation.items.map((item) => (
-                <Grid item xs={12} sm={6} md={4} key={item.category_id}>
-                  <Card variant="outlined">
-                    <CardContent>
+            {recommendation.items.length > 0 && (
+              <Card variant="outlined">
+                <CardContent>
+                  <Stack direction={{ xs: 'column', md: 'row' }} spacing={2} mb={2}>
+                    <TextField
+                      select
+                      size="small"
+                      label="Sugerido por categoría"
+                      value={selectedRecommendationCategoryId || recommendation.items[0].category_id}
+                      onChange={(e) => setSelectedRecommendationCategoryId(Number(e.target.value))}
+                      sx={{ minWidth: { xs: '100%', md: 320 } }}
+                    >
+                      {recommendation.items.map((item) => (
+                        <MenuItem key={item.category_id} value={item.category_id}>
+                          {item.category_name} · {formatCurrency(item.recommended_amount)}
+                        </MenuItem>
+                      ))}
+                    </TextField>
+                    <Chip
+                      size="small"
+                      label={`${recommendation.items.length} categorías sugeridas`}
+                      color="info"
+                    />
+                  </Stack>
+
+                  {selectedRecommendationItem && (
+                    <>
                       <Stack direction="row" justifyContent="space-between" alignItems="center" mb={1}>
-                        <Typography variant="subtitle1" fontWeight={700}>{item.category_name}</Typography>
-                        <Chip size="small" label={item.bucket === 'needs' ? 'Necesidad' : 'Deseo'} color={item.bucket === 'needs' ? 'primary' : 'secondary'} />
+                        <Typography variant="subtitle1" fontWeight={700}>{selectedRecommendationItem.category_name}</Typography>
+                        <Chip size="small" label={selectedRecommendationItem.bucket === 'needs' ? 'Necesidad' : 'Deseo'} color={selectedRecommendationItem.bucket === 'needs' ? 'primary' : 'secondary'} />
                       </Stack>
                       <Typography variant="h6" color="primary.main" fontWeight={700}>
-                        {formatCurrency(item.recommended_amount)}
+                        {formatCurrency(selectedRecommendationItem.recommended_amount)}
                       </Typography>
                       <Typography variant="body2" color="text.secondary">
-                        Gasto promedio reciente: {formatCurrency(item.recent_avg_spent)}
+                        Gasto promedio reciente: {formatCurrency(selectedRecommendationItem.recent_avg_spent)}
                       </Typography>
                       <Typography variant="body2" color="text.secondary">
-                        Presupuesto actual: {formatCurrency(item.current_budget_amount)}
+                        Presupuesto actual: {formatCurrency(selectedRecommendationItem.current_budget_amount)}
                       </Typography>
                       <Divider sx={{ my: 1 }} />
                       <Typography variant="caption" color="text.secondary">
-                        {item.rationale}
+                        {selectedRecommendationItem.rationale}
                       </Typography>
-                    </CardContent>
-                  </Card>
-                </Grid>
-              ))}
-            </Grid>
+                    </>
+                  )}
+                </CardContent>
+              </Card>
+            )}
           </CardContent>
         </Card>
       )}
@@ -191,11 +230,14 @@ export default function BudgetsPage() {
                   />
                   <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                     <Typography variant="caption" color="text.secondary">{pct.toFixed(1)}%</Typography>
-                    <Chip
-                      size="small"
-                      label={status === 'exceeded' ? 'Excedido' : status === 'near' ? 'Cerca del límite' : 'OK'}
-                      color={status === 'exceeded' ? 'error' : status === 'near' ? 'warning' : 'success'}
-                    />
+                    <Stack direction="row" spacing={0.5} alignItems="center">
+                      {budget.is_recurring && <Chip size="small" label="Recurrente" variant="outlined" color="info" />}
+                      <Chip
+                        size="small"
+                        label={status === 'exceeded' ? 'Excedido' : status === 'near' ? 'Cerca del límite' : 'OK'}
+                        color={status === 'exceeded' ? 'error' : status === 'near' ? 'warning' : 'success'}
+                      />
+                    </Stack>
                   </Box>
                 </CardContent>
               </Card>
@@ -208,13 +250,23 @@ export default function BudgetsPage() {
         <DialogTitle>{editing ? 'Editar Presupuesto' : 'Nuevo Presupuesto'}</DialogTitle>
         <DialogContent>
           <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, pt: 1 }}>
-            <TextField select label="Categoría" value={form.category_id ?? ''} onChange={(e) => setForm((f) => ({ ...f, category_id: Number(e.target.value) }))} fullWidth>
-              <MenuItem value="">Seleccione categoría</MenuItem>
-              {categories.map((c) => <MenuItem key={c.id} value={c.id}>{c.name}</MenuItem>)}
-            </TextField>
+            <CategoryAutocomplete
+              categories={categories}
+              value={form.category_id ?? null}
+              onChange={(id) => setForm((f) => ({ ...f, category_id: id ?? undefined }))}
+            />
             <TextField label="Monto" type="number" value={form.expected_amount ?? 0} onChange={(e) => setForm((f) => ({ ...f, expected_amount: parseFloat(e.target.value) || 0 }))} fullWidth />
             <TextField label="Mes" type="number" value={form.month ?? month} onChange={(e) => setForm((f) => ({ ...f, month: Number(e.target.value) }))} fullWidth />
             <TextField label="Año" type="number" value={form.year ?? year} onChange={(e) => setForm((f) => ({ ...f, year: Number(e.target.value) }))} fullWidth />
+            <FormControlLabel
+              control={
+                <Checkbox
+                  checked={Boolean(form.is_recurring)}
+                  onChange={(e) => setForm((f) => ({ ...f, is_recurring: e.target.checked }))}
+                />
+              }
+              label="Recurrente"
+            />
           </Box>
         </DialogContent>
         <DialogActions>

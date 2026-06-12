@@ -12,5 +12,6 @@ class Budget(SQLModel, table=True):
     category_id: int = Field(foreign_key="categories.id")
     expected_amount: float
     actual_amount: float = Field(default=0.0)
+    is_recurring: bool = Field(default=False)
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow)

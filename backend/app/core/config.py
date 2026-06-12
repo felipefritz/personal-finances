@@ -13,16 +13,13 @@ class Settings(BaseSettings):
 
     CORS_ORIGINS: List[str] = ["http://localhost:5173", "http://localhost:3000"]
 
-    # LLM
-    LLM_PROVIDER: str = "mock"  # mock | openai | ollama
-    OPENAI_API_KEY: Optional[str] = None
-    MODEL_NAME: str = "gpt-4.1"
-    OLLAMA_BASE_URL: str = "http://localhost:11434"
-    OLLAMA_MODEL: str = "llama3.1:8b"
-
-    # Fintoc
+    # Fintoc (se elimina en la fase de scraping; mantenido para arranque transitorio)
     FINTOC_SECRET_KEY: Optional[str] = None
     FINTOC_BASE_URL: str = "https://api.fintoc.com/v1"
+    FINTOC_AUTO_SYNC_ENABLED: bool = True
+    FINTOC_AUTO_SYNC_INTERVAL_SECONDS: int = 300
+    FINTOC_REFRESH_INTENT_ENABLED: bool = True
+    FINTOC_REFRESH_INTENT_INTERVAL_SECONDS: int = 300
 
     model_config = {"env_file": ".env", "extra": "ignore"}
 

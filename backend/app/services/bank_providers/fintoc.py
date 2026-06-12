@@ -55,13 +55,21 @@ class FintocProvider(BaseBankProvider):
         if not self.secret_key or access_token.startswith("fintoc_mock"):
             return self._mock_accounts()
 
+        params: Dict[str, Any] = {"link_token": access_token}
         with httpx.Client() as client:
             response = client.get(
                 f"{self.base_url}/accounts",
-                headers={**self._headers(), "Authorization": f"Bearer {access_token}"},
+                headers=self._headers(),
+                params=params,
             )
             response.raise_for_status()
-            return response.json().get("data", [])
+            payload = response.json()
+            if isinstance(payload, list):
+                return payload
+            if isinstance(payload, dict):
+                data = payload.get("data", [])
+                return data if isinstance(data, list) else []
+            return []
 
     def get_movements(
         self,
@@ -79,15 +87,50 @@ class FintocProvider(BaseBankProvider):
             params["since"] = since
         if until:
             params["until"] = until
+        params["link_token"] = access_token
 
         with httpx.Client() as client:
             response = client.get(
                 f"{self.base_url}/accounts/{account_id}/movements",
-                headers={**self._headers(), "Authorization": f"Bearer {access_token}"},
+                headers=self._headers(),
                 params=params,
             )
             response.raise_for_status()
-            return response.json().get("data", [])
+            payload = response.json()
+            if isinstance(payload, list):
+                return payload
+            if isinstance(payload, dict):
+                data = payload.get("data", [])
+                return data if isinstance(data, list) else []
+            return []
+
+    def create_refresh_intent(self, access_token: str) -> Dict[str, Any]:
+        """Request Fintoc to refresh data from bank before syncing movements."""
+        if not self.secret_key or access_token.startswith("fintoc_mock"):
+            return {"mock": True, "requested": False}
+
+        params: Dict[str, Any] = {"link_token": access_token}
+
+        with httpx.Client() as client:
+            # Fallback to GET for compatibility when provider endpoint semantics vary.
+            response = client.post(
+                f"{self.base_url}/refresh_intents",
+                headers=self._headers(),
+                params=params,
+            )
+            if response.status_code in (404, 405):
+                response = client.get(
+                    f"{self.base_url}/refresh_intents",
+                    headers=self._headers(),
+                    params=params,
+                )
+
+            response.raise_for_status()
+            payload = response.json()
+            if isinstance(payload, dict):
+                payload["requested"] = True
+                return payload
+            return {"requested": True, "raw": payload}
 
     def sync(self, access_token: str, account_id: str) -> Dict[str, Any]:
         movements = self.get_movements(access_token, account_id)

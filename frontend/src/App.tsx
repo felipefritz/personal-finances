@@ -6,9 +6,9 @@ import TransactionsPage from './pages/TransactionsPage';
 import CategoriesPage from './pages/CategoriesPage';
 import FixedExpensesPage from './pages/FixedExpensesPage';
 import SavingsGoalsPage from './pages/SavingsGoalsPage';
+import SavingsPlannerPage from './pages/SavingsPlannerPage';
 import BudgetsPage from './pages/BudgetsPage';
 import ImportsPage from './pages/ImportsPage';
-import AgentPage from './pages/AgentPage';
 import BankConnectionsPage from './pages/BankConnectionsPage';
 import RecurringIncomesPage from './pages/RecurringIncomesPage';
 import ProjectionPage from './pages/ProjectionPage';
@@ -25,10 +25,10 @@ export default function App() {
         <Route path="fixed-expenses" element={<FixedExpensesPage />} />
           <Route path="recurring-incomes" element={<RecurringIncomesPage />} />
         <Route path="savings-goals" element={<SavingsGoalsPage />} />
+        <Route path="savings-plan" element={<SavingsPlannerPage />} />
         <Route path="budgets" element={<BudgetsPage />} />
         <Route path="proyeccion" element={<ProjectionPage />} />
         <Route path="imports" element={<ImportsPage />} />
-        <Route path="agent" element={<AgentPage />} />
         <Route path="bank-connections" element={<BankConnectionsPage />} />
       </Route>
     </Routes>

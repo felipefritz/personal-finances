@@ -36,6 +36,14 @@ import ConfirmDialog from '../components/common/ConfirmDialog';
 
 const BANKS = ['BancoEstado', 'Banco Santander', 'BCI', 'Banco de Chile', 'Scotiabank', 'Itaú', 'BICE', 'Otro'];
 
+const CARD_NETWORKS = [
+  { value: 'visa', label: 'Visa' },
+  { value: 'mastercard', label: 'Mastercard' },
+  { value: 'amex', label: 'American Express' },
+  { value: 'debito_mastercard', label: 'Débito Mastercard' },
+  { value: 'otro', label: 'Otro' },
+];
+
 const EMPTY_FORM: Partial<Account> = {
   name: '',
   bank: '',
@@ -135,7 +143,7 @@ function AccountForm({
         {ACCOUNT_TYPES.map((t) => <MenuItem key={t.value} value={t.value}>{t.label}</MenuItem>)}
       </TextField>
       <TextField
-        label="Saldo inicial"
+        label={value.account_type === 'tarjeta_credito' ? 'Cupo total tarjeta' : 'Saldo inicial'}
         type="number"
         value={value.balance ?? 0}
         onChange={(e) => set('balance', parseFloat(e.target.value) || 0)}
@@ -146,6 +154,28 @@ function AccountForm({
       >
         {['CLP', 'USD', 'EUR', 'UF'].map((c) => <MenuItem key={c} value={c}>{c}</MenuItem>)}
       </TextField>
+      {value.account_type === 'tarjeta_credito' && (
+        <>
+          <TextField
+            select
+            label="Red de tarjeta"
+            value={value.card_network ?? ''}
+            onChange={(e) => set('card_network', e.target.value)}
+            fullWidth
+          >
+            <MenuItem value="">— Sin especificar —</MenuItem>
+            {CARD_NETWORKS.map((n) => <MenuItem key={n.value} value={n.value}>{n.label}</MenuItem>)}
+          </TextField>
+          <TextField
+            label="Últimos 4 dígitos"
+            value={value.card_last_four ?? ''}
+            onChange={(e) => set('card_last_four', e.target.value.replace(/\D/g, '').slice(0, 4))}
+            inputProps={{ maxLength: 4, pattern: '[0-9]*' }}
+            placeholder="ej. 8023"
+            fullWidth
+          />
+        </>
+      )}
     </Box>
   );
 }
@@ -214,7 +244,22 @@ export default function AccountsPage() {
     else createMut.mutate(form);
   };
 
-  const totalBalance = accounts.reduce((s, a) => s + (a.balance || 0), 0);
+  const cardDebt = (acc: Account) =>
+    Math.abs(Math.min(acc.computed_balance ?? 0, 0));
+
+  const cardAvailable = (acc: Account) => {
+    if (acc.available_credit !== undefined) return acc.available_credit;
+    const limit = acc.credit_limit ?? acc.balance ?? 0;
+    return limit - cardDebt(acc);
+  };
+
+  // For total net balance, credit cards should contribute as debt (negative).
+  const effectiveBalance = (acc: Account) =>
+    acc.account_type === 'tarjeta_credito' && acc.computed_balance !== undefined
+      ? acc.computed_balance
+      : (acc.balance || 0);
+
+  const totalBalance = accounts.reduce((s, a) => s + effectiveBalance(a), 0);
 
   if (isLoading) return <LoadingSpinner />;
 
@@ -268,13 +313,36 @@ export default function AccountsPage() {
                   </Typography>
                   <Typography variant="body2" color="text.secondary" gutterBottom>
                     {acc.bank || '—'}
+                    {acc.account_type === 'tarjeta_credito' && acc.card_network && (
+                      <> · {CARD_NETWORKS.find((n) => n.value === acc.card_network)?.label ?? acc.card_network}</>
+                    )}
+                    {acc.account_type === 'tarjeta_credito' && acc.card_last_four && (
+                      <> •••• {acc.card_last_four}</>
+                    )}
                   </Typography>
-                  <Typography variant="h5" fontWeight={700} color="primary.main">
-                    {formatCurrency(acc.balance)}
+                  <Typography
+                    variant="h5"
+                    fontWeight={700}
+                    color={acc.account_type === 'tarjeta_credito' ? 'success.main' : 'primary.main'}
+                  >
+                    {acc.account_type === 'tarjeta_credito'
+                      ? formatCurrency(cardAvailable(acc))
+                      : formatCurrency(effectiveBalance(acc))}
                   </Typography>
                   <Typography variant="caption" color="text.secondary">
                     {acc.currency}
+                    {acc.account_type === 'tarjeta_credito' && ' · cupo disponible'}
                   </Typography>
+                  {acc.account_type === 'tarjeta_credito' && (
+                    <Typography variant="caption" display="block" color="text.secondary">
+                      Deuda: {formatCurrency(cardDebt(acc))} · Cupo total: {formatCurrency(acc.credit_limit ?? acc.balance ?? 0)}
+                    </Typography>
+                  )}
+                  {acc.account_type === 'tarjeta_credito' && (acc.future_installments_commitment ?? 0) > 0 && (
+                    <Typography variant="caption" display="block" color="warning.main">
+                      Incluye cuotas futuras reservadas: {formatCurrency(acc.future_installments_commitment ?? 0)}
+                    </Typography>
+                  )}
                 </CardContent>
                 <CardActions sx={{ justifyContent: 'flex-end', pt: 0 }}>
                   <Tooltip title="Editar">

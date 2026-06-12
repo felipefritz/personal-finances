@@ -1,4 +1,10 @@
 export const formatCurrency = (amount: number, currency = 'CLP'): string => {
+  if (currency === 'UF') {
+    return `UF ${new Intl.NumberFormat('es-CL', {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    }).format(amount)}`;
+  }
   if (currency === 'CLP') {
     return new Intl.NumberFormat('es-CL', {
       style: 'currency',

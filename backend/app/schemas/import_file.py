@@ -15,6 +15,17 @@ class ImportFileRead(BaseModel):
     period_start: Optional[date] = None
     period_end: Optional[date] = None
     period_label: Optional[str] = None
+    statement_month: Optional[str] = None
+    national_total_clp: float = 0
+    international_total_clp: float = 0
+    international_total_usd: float = 0
+    import_total_clp: float = 0
+    payable_national_clp: float = 0
+    payable_international_clp: float = 0
+    payable_total_clp: float = 0
+    statement_credit_limit_clp: Optional[float] = None
+    statement_available_credit_clp: Optional[float] = None
+    import_type: Optional[str] = "estado_cuenta"
     imported_at: datetime
 
     model_config = {"from_attributes": True}
@@ -33,6 +44,7 @@ class ImportPreviewRow(BaseModel):
     date: Optional[str] = None
     description: Optional[str] = None
     amount: Optional[float] = None
+    local_amount: Optional[float] = None  # CLP equivalent for international rows
     transaction_type: Optional[str] = None
     is_duplicate: bool = False
     is_international: bool = False
@@ -56,3 +68,5 @@ class ImportConfirmRequest(BaseModel):
     pdf_password: Optional[str] = None
     column_mapping: Optional[ColumnMapping] = None
     skip_duplicates: bool = True
+    selected_row_indices: Optional[List[int]] = None
+    import_type: Optional[str] = "estado_cuenta"

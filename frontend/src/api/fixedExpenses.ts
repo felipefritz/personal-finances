@@ -1,5 +1,11 @@
 import apiClient from './client';
-import type { FixedExpense } from '../types';
+import type {
+  FixedExpense,
+  FixedExpensePrepayPayload,
+  FixedExpensePrepayResult,
+  FixedExpensePrepayRevertPayload,
+  FixedExpensePrepayRevertResult,
+} from '../types';
 
 export const getFixedExpenses = async (): Promise<FixedExpense[]> => {
   const { data } = await apiClient.get('/fixed-expenses/');
@@ -23,4 +29,20 @@ export const updateFixedExpense = async (id: number, payload: Partial<FixedExpen
 
 export const deleteFixedExpense = async (id: number): Promise<void> => {
   await apiClient.delete(`/fixed-expenses/${id}`);
+};
+
+export const prepayFixedExpense = async (
+  id: number,
+  payload: FixedExpensePrepayPayload,
+): Promise<FixedExpensePrepayResult> => {
+  const { data } = await apiClient.post(`/fixed-expenses/${id}/prepay`, payload);
+  return data;
+};
+
+export const revertFixedExpensePrepay = async (
+  id: number,
+  payload: FixedExpensePrepayRevertPayload,
+): Promise<FixedExpensePrepayRevertResult> => {
+  const { data } = await apiClient.post(`/fixed-expenses/${id}/prepay/revert`, payload);
+  return data;
 };

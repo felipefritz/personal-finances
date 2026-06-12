@@ -9,6 +9,7 @@ class BudgetBase(BaseModel):
     category_id: int
     expected_amount: float
     actual_amount: float = 0.0
+    is_recurring: bool = False
 
 
 class BudgetCreate(BudgetBase):
@@ -16,8 +17,10 @@ class BudgetCreate(BudgetBase):
 
 
 class BudgetUpdate(BaseModel):
+    category_id: Optional[int] = None
     expected_amount: Optional[float] = None
     actual_amount: Optional[float] = None
+    is_recurring: Optional[bool] = None
 
 
 class BudgetRead(BudgetBase):

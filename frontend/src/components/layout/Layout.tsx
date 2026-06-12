@@ -11,7 +11,7 @@ export default function Layout() {
   const [mobileOpen, setMobileOpen] = useState(false);
 
   return (
-    <Box sx={{ display: 'flex', minHeight: '100vh' }}>
+    <Box sx={{ display: 'flex', minHeight: '100vh', bgcolor: 'background.default' }}>
       <Sidebar
         drawerWidth={DRAWER_WIDTH}
         mobileOpen={mobileOpen}
@@ -23,13 +23,14 @@ export default function Layout() {
           flexGrow: 1,
           display: 'flex',
           flexDirection: 'column',
-          ml: { sm: `${DRAWER_WIDTH}px` },
+          width: { md: `calc(100% - ${DRAWER_WIDTH}px)` },
           minWidth: 0,
+          overflow: 'hidden',
         }}
       >
         <Header onMenuClick={() => setMobileOpen(true)} />
         <FinancialPulse />
-        <Box sx={{ flexGrow: 1, p: 3, overflow: 'auto' }}>
+        <Box sx={{ flexGrow: 1, p: { xs: 2, sm: 2.5, md: 3 }, overflowY: 'auto' }}>
           <Outlet />
         </Box>
       </Box>

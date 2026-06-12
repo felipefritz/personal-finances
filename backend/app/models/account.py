@@ -16,7 +16,9 @@ class Account(SQLModel, table=True):
     is_active: bool = Field(default=True)
     source: str = Field(default="manual", max_length=50)  # manual, fintoc, excel, pdf
     statement_pdf_password: Optional[str] = Field(default=None, max_length=255)
-    user_id: Optional[int] = Field(default=None, foreign_key="users.id")
+    # Credit card specific fields (only relevant when account_type = tarjeta_credito)
+    card_last_four: Optional[str] = Field(default=None, max_length=4)
+    card_network: Optional[str] = Field(default=None, max_length=20)  # visa, mastercard, amex, debito_mastercard
     notes: Optional[str] = Field(default=None)
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow)

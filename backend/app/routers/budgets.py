@@ -7,6 +7,8 @@ from app.core.database import get_session
 from app.models.budget import Budget
 from app.models.category import Category
 from app.models.transaction import Transaction
+from app.models.fixed_expense import FixedExpense
+from app.services.currency_service import convert_fixed_amount_to_clp
 from app.schemas.budget import (
     BudgetCreate,
     BudgetRead,
@@ -16,13 +18,61 @@ from app.schemas.budget import (
     BudgetUpdate,
 )
 from datetime import date
+from app.services.financial_policy import MONTHLY_FREE_USE_RESERVE_RATIO
+from app.services.projection_service import project_annual_balance
 
 router = APIRouter(prefix="/budgets", tags=["Budgets"])
+
+
+def _previous_period(month: int, year: int) -> tuple[int, int]:
+    if month == 1:
+        return 12, year - 1
+    return month - 1, year
+
+
+def _materialize_recurring_budgets(session: Session, month: int, year: int) -> None:
+    prev_month, prev_year = _previous_period(month, year)
+    recurring_from_prev = session.exec(
+        select(Budget).where(
+            and_(
+                Budget.month == prev_month,
+                Budget.year == prev_year,
+                Budget.is_recurring == True,
+            )
+        )
+    ).all()
+    if not recurring_from_prev:
+        return
+
+    existing_for_period = session.exec(
+        select(Budget).where(and_(Budget.month == month, Budget.year == year))
+    ).all()
+    existing_category_ids = {budget.category_id for budget in existing_for_period}
+
+    created_any = False
+    for prev_budget in recurring_from_prev:
+        if prev_budget.category_id in existing_category_ids:
+            continue
+
+        session.add(
+            Budget(
+                month=month,
+                year=year,
+                category_id=prev_budget.category_id,
+                expected_amount=prev_budget.expected_amount,
+                actual_amount=0.0,
+                is_recurring=True,
+            )
+        )
+        created_any = True
+
+    if created_any:
+        session.commit()
 
 BASE_RULE_SPLIT = {
     "needs": 0.50,
     "wants": 0.30,
-    "savings": 0.20,
+    "savings": MONTHLY_FREE_USE_RESERVE_RATIO,
 }
 
 CATEGORY_RULES = {
@@ -41,6 +91,30 @@ CATEGORY_RULES = {
 }
 
 
+def _get_category_ids(session: Session, category_id: int) -> list[int]:
+    """Returns category_id plus all descendant categories (recursive)."""
+    categories = session.exec(select(Category)).all()
+    children_by_parent: dict[Optional[int], list[int]] = {}
+    for c in categories:
+        if c.id is None:
+            continue
+        children_by_parent.setdefault(c.parent_id, []).append(c.id)
+
+    result: list[int] = []
+    stack = [category_id]
+    visited: set[int] = set()
+
+    while stack:
+        current = stack.pop()
+        if current in visited:
+            continue
+        visited.add(current)
+        result.append(current)
+        stack.extend(children_by_parent.get(current, []))
+
+    return result
+
+
 def _compute_actual(budget: Budget, session: Session) -> float:
     start = date(budget.year, budget.month, 1)
     if budget.month == 12:
@@ -48,18 +122,66 @@ def _compute_actual(budget: Budget, session: Session) -> float:
     else:
         end = date(budget.year, budget.month + 1, 1)
 
-    txs = session.exec(
+    all_cat_ids = _get_category_ids(session, budget.category_id)
+
+    # 1. Regular transactions within the period (non-installment or single payment)
+    regular_txs = session.exec(
         select(Transaction).where(
             and_(
-                Transaction.category_id == budget.category_id,
+                Transaction.category_id.in_(all_cat_ids),
                 Transaction.transaction_type == "expense",
                 Transaction.date >= start,
                 Transaction.date < end,
                 Transaction.status != "ignored",
+                Transaction.installment_total == None,
             )
         )
     ).all()
-    return round(sum(abs(t.amount) for t in txs), 2)
+    total = sum(abs(t.amount) for t in regular_txs)
+
+    # 1.5 Fixed-expense commitments for this category tree.
+    # If fixed expenses are configured (e.g., Arriendo under Vivienda) but not fully
+    # materialized as transactions, include the remaining committed amount.
+    fixed_items = session.exec(
+        select(FixedExpense).where(
+            and_(
+                FixedExpense.is_active == True,
+                FixedExpense.category_id.in_(all_cat_ids),
+            )
+        )
+    ).all()
+    fixed_template_total = sum(max(convert_fixed_amount_to_clp(f.expected_amount, f.currency) or 0, 0) for f in fixed_items)
+    fixed_recorded_total = sum(
+        abs(t.amount)
+        for t in regular_txs
+        if t.category_id in {f.category_id for f in fixed_items if f.category_id is not None}
+    )
+    total += max(fixed_template_total - fixed_recorded_total, 0)
+
+    # 2. Installment transactions (any date): project which installment falls in this budget month
+    installment_txs = session.exec(
+        select(Transaction).where(
+            and_(
+                Transaction.category_id.in_(all_cat_ids),
+                Transaction.transaction_type == "expense",
+                Transaction.status != "ignored",
+                Transaction.installment_total != None,
+                Transaction.installment_total > 1,
+            )
+        )
+    ).all()
+    for t in installment_txs:
+        months_offset = (budget.year - t.date.year) * 12 + (budget.month - t.date.month)
+        installment_num = (t.installment_current or 1) + months_offset
+        if 1 <= installment_num <= t.installment_total:
+            monthly = (
+                t.installment_base_amount
+                if t.installment_base_amount
+                else abs(t.amount) / t.installment_total
+            )
+            total += abs(monthly)
+
+    return round(total, 2)
 
 
 def _enrich(b: Budget, session: Session) -> BudgetRead:
@@ -122,13 +244,14 @@ def _average_expense_by_category_last_n_months(
     months: int = 3,
 ) -> float:
     totals: list[float] = []
+    all_cat_ids = _get_category_ids(session, category_id)
     m, y = month, year
     for _ in range(months):
         start, end = _month_range(m, y)
         txs = session.exec(
             select(Transaction).where(
                 and_(
-                    Transaction.category_id == category_id,
+                    Transaction.category_id.in_(all_cat_ids),
                     Transaction.date >= start,
                     Transaction.date < end,
                     Transaction.transaction_type == "expense",
@@ -198,11 +321,37 @@ def _build_budget_recommendations(session: Session, month: int, year: int) -> Bu
     else:
         insights.append("Tus gastos esenciales permiten trabajar con una meta de ahorro cercana al 20% mensual.")
 
+    planning_income = avg_income
     bucket_targets = {
-        "needs": round(avg_income * needs_ratio, 0),
-        "wants": round(avg_income * wants_ratio, 0),
-        "savings": round(avg_income * savings_ratio, 0),
+        "needs": round(planning_income * needs_ratio, 0),
+        "wants": round(planning_income * wants_ratio, 0),
+        "savings": round(planning_income * savings_ratio, 0),
     }
+
+    # Align budgets with annual projection outputs for this month:
+    # - savings target follows projected suggested savings
+    # - wants target follows projected free-use remainder (net balance)
+    # This keeps Presupuestos and Proyeccion speaking the same language.
+    projected_month = next(
+        (
+            m for m in project_annual_balance(session, year)
+            if int(m.get("month", 0)) == month
+        ),
+        None,
+    )
+    if projected_month is not None:
+        projected_income = round(max(float(projected_month.get("total_income", 0) or 0), 0), 0)
+        planning_income = max(planning_income, projected_income)
+        projected_savings = round(max(float(projected_month.get("total_suggested_savings", 0) or 0), 0), 0)
+        projected_free_use = round(max(float(projected_month.get("net_balance", 0) or 0), 0), 0)
+
+        bucket_targets["savings"] = projected_savings
+        bucket_targets["wants"] = projected_free_use
+        bucket_targets["needs"] = round(max(planning_income - projected_savings - projected_free_use, 0), 0)
+
+        insights.append(
+            f"Se ajusta presupuesto utilizable del mes a saldo libre proyectado (${projected_free_use:,.0f}) y ahorro sugerido proyectado (${projected_savings:,.0f})."
+        )
 
     raw_recommendations: list[dict] = []
     for item in recent_items:
@@ -259,7 +408,7 @@ def _build_budget_recommendations(session: Session, month: int, year: int) -> Bu
         strategy_name=strategy_name,
         month=month,
         year=year,
-        avg_monthly_income=avg_income,
+        avg_monthly_income=planning_income,
         needs_target=float(bucket_targets["needs"]),
         wants_target=float(bucket_targets["wants"]),
         savings_target=float(bucket_targets["savings"]),
@@ -276,6 +425,9 @@ def list_budgets(
     year: Optional[int] = Query(default=None),
     session: Session = Depends(get_session),
 ):
+    if month and year:
+        _materialize_recurring_budgets(session, month, year)
+
     query = select(Budget)
     if month:
         query = query.where(Budget.month == month)
@@ -291,6 +443,7 @@ def get_budget_recommendations(
     year: int = Query(...),
     session: Session = Depends(get_session),
 ):
+    _materialize_recurring_budgets(session, month, year)
     return _build_budget_recommendations(session, month, year)
 
 
@@ -300,6 +453,7 @@ def apply_budget_recommendations(
     year: int = Query(...),
     session: Session = Depends(get_session),
 ):
+    _materialize_recurring_budgets(session, month, year)
     recommendations = _build_budget_recommendations(session, month, year)
     existing = session.exec(select(Budget).where(and_(Budget.month == month, Budget.year == year))).all()
     existing_map = {budget.category_id: budget for budget in existing}

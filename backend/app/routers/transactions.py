@@ -15,6 +15,7 @@ from app.schemas.transaction import (
     TransactionListResponse,
 )
 from app.services.categorization_service import suggest_category
+from app.services.currency_service import convert_amount, get_rates_clp
 
 router = APIRouter(prefix="/transactions", tags=["Transactions"])
 
@@ -31,6 +32,8 @@ def _normalize_transaction_payload(payload: dict) -> dict:
         normalized["amount"] = -abs(amount)
         normalized["is_transfer"] = False
     elif tx_type == "transfer":
+        if amount is not None:
+            normalized["amount"] = abs(amount)
         normalized["is_transfer"] = True
 
     return normalized
@@ -42,7 +45,43 @@ def _enrich(t: Transaction, session: Session) -> TransactionRead:
     data = t.model_dump()
     data["category_name"] = cat.name if cat else None
     data["account_name"] = acc.name if acc else None
+
+    # For international transactions, ensure local_amount (CLP) is populated.
+    # If stored at import time, use it; otherwise compute dynamically from current rates.
+    if t.is_international and t.amount is not None:
+        local_ccy = acc.currency if acc and acc.currency else "CLP"
+        local_amount = t.local_amount
+        if local_amount is None:
+            local_amount = convert_amount(abs(t.amount), "USD", local_ccy)
+            if local_amount is not None:
+                sign = 1 if t.transaction_type == "income" else -1
+                local_amount = sign * abs(local_amount)
+        data["local_amount"] = local_amount
+
+        # Compute exchange_rate_usd (CLP per 1 USD)
+        rates = get_rates_clp()
+        data["exchange_rate_usd"] = rates.get("USD")
+
     return TransactionRead(**data)
+
+
+def _amount_for_clp_summary(t: Transaction) -> float:
+    """Return transaction amount normalized to CLP for filtered totals shown in UI."""
+    if t.transaction_type == "transfer" or t.is_transfer:
+        # Transfers are internal moves and should not affect income/expense net totals.
+        return 0.0
+
+    if t.is_international:
+        if t.local_amount is not None:
+            return float(t.local_amount)
+
+        source_currency = (t.original_currency or "USD").upper()
+        converted = convert_amount(abs(t.amount), source_currency, "CLP")
+        if converted is not None:
+            sign = -1 if t.transaction_type == "expense" else 1
+            return float(sign * abs(converted))
+
+    return float(t.amount or 0)
 
 
 @router.get("/", response_model=TransactionListResponse)
@@ -61,6 +100,8 @@ def list_transactions(
     is_fixed_expense: Optional[bool] = Query(default=None),
     is_ant_expense: Optional[bool] = Query(default=None),
     status: Optional[str] = Query(default=None),
+    sort_by: Optional[str] = Query(default="date"),
+    sort_order: Optional[str] = Query(default="desc"),
     session: Session = Depends(get_session),
 ):
     filters = []
@@ -91,12 +132,31 @@ def list_transactions(
     if status:
         filters.append(Transaction.status == status)
 
-    query = select(Transaction)
+    base_query = select(Transaction)
     if filters:
-        query = query.where(and_(*filters))
-    query = query.order_by(Transaction.date.desc(), Transaction.id.desc())
+        base_query = base_query.where(and_(*filters))
 
-    total = len(session.exec(query).all())
+    filtered_transactions = session.exec(base_query).all()
+    total = len(filtered_transactions)
+    total_amount = sum(_amount_for_clp_summary(t) for t in filtered_transactions)
+
+    query = base_query
+    
+    # Ordenamiento
+    if sort_by == "account":
+        from app.models.account import Account as AccountModel
+        query = query.outerjoin(AccountModel, Transaction.account_id == AccountModel.id)
+        order_col = AccountModel.name
+    elif sort_by == "amount":
+        order_col = Transaction.amount
+    else:  # date (default)
+        order_col = Transaction.date
+    
+    if sort_order == "asc":
+        query = query.order_by(order_col.asc(), Transaction.id.asc())
+    else:
+        query = query.order_by(order_col.desc(), Transaction.id.desc())
+
     offset = (page - 1) * page_size
     items = session.exec(query.offset(offset).limit(page_size)).all()
 
@@ -107,6 +167,7 @@ def list_transactions(
         page=page,
         page_size=page_size,
         total_pages=math.ceil(total / page_size) if total > 0 else 1,
+        total_amount=float(total_amount),
     )
 
 

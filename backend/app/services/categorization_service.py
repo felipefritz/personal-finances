@@ -1,9 +1,27 @@
 """
-Categorization service: assigns categories to transactions based on keyword rules.
-"""
-from typing import Optional
+Keyword-based transaction categorization service.
 
-CATEGORIZATION_RULES: list[dict] = [
+Classifies transactions into categories and flags them with behavioural signals
+(ant expense, debt, fixed expense, installment) purely from the transaction
+description string and amount.  No machine learning is used — the rules are
+deterministic and easy to extend by appending entries to ``CATEGORIZATION_RULES``.
+
+Typical usage:
+    hints = suggest_category(transaction.description, transaction.amount)
+    transaction.category_id = resolve_category_id(hints["category"], session)
+"""
+from typing import Optional, TypedDict
+
+
+class CategorizationRule(TypedDict):
+    """A single keyword-based rule that maps transaction descriptions to a category."""
+
+    keywords: list[str]
+    category: str
+    subcategory: Optional[str]
+
+
+CATEGORIZATION_RULES: list[CategorizationRule] = [
     # Transporte
     {"keywords": ["uber", "cabify", "bolt", "didi", "taxi"], "category": "Transporte", "subcategory": "Taxi/Rideshare"},
     {"keywords": ["bip", "metro", "transantiago", "red"], "category": "Transporte", "subcategory": "Transporte público"},
@@ -66,8 +84,16 @@ TRANSFER_KEYWORDS = ["transferencia", "transf.", "traspaso"]
 
 
 def suggest_category(description: str, amount: float) -> dict:
-    """
-    Returns classification hints based on description and amount.
+    """Return classification hints for a transaction based on its description and amount.
+
+    The returned dict contains:
+        - ``category``: matched category name or ``None``
+        - ``subcategory``: matched subcategory name or ``None``
+        - ``is_ant_expense``: ``True`` when the transaction looks like a small impulse spend
+        - ``is_debt``: ``True`` when the description suggests a debt/credit payment
+        - ``is_fixed_expense``: ``True`` when the description matches a recurring fixed cost
+        - ``suggested_type``: one of ``"income"``, ``"expense"``, or ``"transfer"``
+        - ``is_installment``: ``True`` when the description indicates an instalment payment
     """
     desc_lower = description.lower()
     result = {
@@ -91,6 +117,12 @@ def suggest_category(description: str, amount: float) -> dict:
 
 
 def _is_ant_expense(desc_lower: str, amount: float) -> bool:
+    """Return True when the transaction looks like a small, recurring impulse spend.
+
+    A transaction is considered an "ant expense" (gasto hormiga) if its absolute
+    value is at or below ``ANT_EXPENSE_MAX_AMOUNT`` CLP, or if its description
+    contains a known small-purchase keyword regardless of amount.
+    """
     normalized_amount = abs(amount)
     if normalized_amount <= ANT_EXPENSE_MAX_AMOUNT:
         return True
@@ -101,6 +133,7 @@ def _is_ant_expense(desc_lower: str, amount: float) -> bool:
 
 
 def _suggest_transaction_type(desc_lower: str, amount: float) -> str:
+    """Infer the most likely transaction type from the description and sign of *amount*."""
     if any(keyword in desc_lower for keyword in TRANSFER_KEYWORDS):
         return "transfer"
     if any(keyword in desc_lower for keyword in INCOME_KEYWORDS):
@@ -111,4 +144,5 @@ def _suggest_transaction_type(desc_lower: str, amount: float) -> str:
 
 
 def _is_installment(desc_lower: str) -> bool:
+    """Return True when *desc_lower* contains installment-number patterns like 'cuota 3' or '3/12'."""
     return "cuota" in desc_lower or "/" in desc_lower and any(token.isdigit() for token in desc_lower.split("/"))

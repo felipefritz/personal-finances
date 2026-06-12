@@ -20,23 +20,43 @@ import TrendingUpIcon from '@mui/icons-material/TrendingUp';
 import SavingsIcon from '@mui/icons-material/Savings';
 import PieChartIcon from '@mui/icons-material/PieChart';
 import UploadFileIcon from '@mui/icons-material/UploadFile';
-import SmartToyIcon from '@mui/icons-material/SmartToy';
 import LinkIcon from '@mui/icons-material/Link';
 import CalendarMonthIcon from '@mui/icons-material/CalendarMonth';
+import AutoGraphIcon from '@mui/icons-material/AutoGraph';
 
-const NAV_ITEMS = [
-  { label: 'Dashboard', to: '/dashboard', icon: <DashboardIcon /> },
-  { label: 'Cuentas', to: '/accounts', icon: <AccountBalanceIcon /> },
-  { label: 'Movimientos', to: '/transactions', icon: <ReceiptLongIcon /> },
-  { label: 'Categorías', to: '/categories', icon: <CategoryIcon /> },
-  { label: 'Gastos Fijos', to: '/fixed-expenses', icon: <RepeatIcon /> },
-    { label: 'Ingresos Recurrentes', to: '/recurring-incomes', icon: <TrendingUpIcon /> },
-  { label: 'Presupuestos', to: '/budgets', icon: <PieChartIcon /> },
-  { label: 'Objetivos', to: '/savings-goals', icon: <SavingsIcon /> },
-  { label: 'Proyección Anual', to: '/proyeccion', icon: <CalendarMonthIcon /> },
-  { label: 'Importar', to: '/imports', icon: <UploadFileIcon /> },
-  { label: 'Agente IA', to: '/agent', icon: <SmartToyIcon /> },
-  { label: 'Conexiones', to: '/bank-connections', icon: <LinkIcon /> },
+const NAV_GROUPS = [
+  {
+    group: 'Principal',
+    items: [
+      { label: 'Dashboard', to: '/dashboard', icon: <DashboardIcon fontSize="small" /> },
+      { label: 'Proyección', to: '/proyeccion', icon: <CalendarMonthIcon fontSize="small" /> },
+      { label: 'Plan de Ahorro', to: '/savings-plan', icon: <AutoGraphIcon fontSize="small" /> },
+    ],
+  },
+  {
+    group: 'Dinero',
+    items: [
+      { label: 'Cuentas', to: '/accounts', icon: <AccountBalanceIcon fontSize="small" /> },
+      { label: 'Movimientos', to: '/transactions', icon: <ReceiptLongIcon fontSize="small" /> },
+      { label: 'Importar', to: '/imports', icon: <UploadFileIcon fontSize="small" /> },
+      { label: 'Conexiones', to: '/bank-connections', icon: <LinkIcon fontSize="small" /> },
+    ],
+  },
+  {
+    group: 'Planificación',
+    items: [
+      { label: 'Presupuestos', to: '/budgets', icon: <PieChartIcon fontSize="small" /> },
+      { label: 'Gastos Fijos', to: '/fixed-expenses', icon: <RepeatIcon fontSize="small" /> },
+      { label: 'Ingresos Recurrentes', to: '/recurring-incomes', icon: <TrendingUpIcon fontSize="small" /> },
+      { label: 'Objetivos', to: '/savings-goals', icon: <SavingsIcon fontSize="small" /> },
+    ],
+  },
+  {
+    group: 'Datos',
+    items: [
+      { label: 'Categorías', to: '/categories', icon: <CategoryIcon fontSize="small" /> },
+    ],
+  },
 ];
 
 interface SidebarProps {
@@ -47,45 +67,62 @@ interface SidebarProps {
 
 function DrawerContent() {
   return (
-    <>
-      <Toolbar>
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-          <SavingsIcon color="primary" />
-          <Typography variant="h6" fontWeight={700} color="primary">
+    <Box sx={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+      <Toolbar sx={{ px: 2 }}>
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+          <Box sx={{
+            width: 32, height: 32, borderRadius: 2,
+            background: 'linear-gradient(135deg, #6366f1 0%, #a78bfa 100%)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+          }}>
+            <SavingsIcon sx={{ fontSize: 18, color: '#fff' }} />
+          </Box>
+          <Typography variant="subtitle1" fontWeight={700} sx={{
+            background: 'linear-gradient(135deg, #6366f1, #a78bfa)',
+            WebkitBackgroundClip: 'text',
+            WebkitTextFillColor: 'transparent',
+          }}>
             Finanzas
           </Typography>
         </Box>
       </Toolbar>
       <Divider />
-      <List dense>
-        {NAV_ITEMS.map((item) => (
-          <ListItem key={item.to} disablePadding>
-            <ListItemButton
-              component={NavLink}
-              to={item.to}
-              sx={{
-                borderRadius: 1,
-                mx: 1,
-                '&.active': {
-                  bgcolor: 'primary.light',
-                  color: 'primary.contrastText',
-                  '& .MuiListItemIcon-root': { color: 'primary.contrastText' },
-                },
-              }}
+      <Box sx={{ flex: 1, overflowY: 'auto', py: 1 }}>
+        {NAV_GROUPS.map((group) => (
+          <Box key={group.group} sx={{ mb: 1 }}>
+            <Typography
+              variant="caption"
+              sx={{ px: 2.5, py: 0.5, display: 'block', fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'text.disabled', fontSize: '0.65rem' }}
             >
-              <ListItemIcon sx={{ minWidth: 36 }}>{item.icon}</ListItemIcon>
-              <ListItemText primary={item.label} />
-            </ListItemButton>
-          </ListItem>
+              {group.group}
+            </Typography>
+            <List dense disablePadding>
+              {group.items.map((item) => (
+                <ListItem key={item.to} disablePadding sx={{ px: 1 }}>
+                  <ListItemButton
+                    component={NavLink}
+                    to={item.to}
+                    sx={{ borderRadius: 2, py: 0.75, gap: 0 }}
+                  >
+                    <ListItemIcon sx={{ minWidth: 34, color: 'text.secondary' }}>{item.icon}</ListItemIcon>
+                    <ListItemText
+                      primary={item.label}
+                      primaryTypographyProps={{ variant: 'body2', fontWeight: 500 }}
+                    />
+                  </ListItemButton>
+                </ListItem>
+              ))}
+            </List>
+          </Box>
         ))}
-      </List>
-    </>
+      </Box>
+    </Box>
   );
 }
 
 export default function Sidebar({ drawerWidth, mobileOpen, onClose }: SidebarProps) {
   return (
-    <Box component="nav" sx={{ width: { sm: drawerWidth }, flexShrink: { sm: 0 } }}>
+    <Box component="nav" sx={{ width: { md: drawerWidth }, flexShrink: { md: 0 } }}>
       {/* Mobile drawer */}
       <Drawer
         variant="temporary"
@@ -93,7 +130,7 @@ export default function Sidebar({ drawerWidth, mobileOpen, onClose }: SidebarPro
         onClose={onClose}
         ModalProps={{ keepMounted: true }}
         sx={{
-          display: { xs: 'block', sm: 'none' },
+          display: { xs: 'block', md: 'none' },
           '& .MuiDrawer-paper': { width: drawerWidth },
         }}
       >
@@ -103,7 +140,7 @@ export default function Sidebar({ drawerWidth, mobileOpen, onClose }: SidebarPro
       <Drawer
         variant="permanent"
         sx={{
-          display: { xs: 'none', sm: 'block' },
+          display: { xs: 'none', md: 'block' },
           '& .MuiDrawer-paper': { width: drawerWidth, boxSizing: 'border-box' },
         }}
         open

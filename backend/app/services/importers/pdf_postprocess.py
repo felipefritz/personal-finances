@@ -4,17 +4,12 @@ Post-processing for PDF-import preview rows.
 Goals:
 - Remove noisy pseudo-transactions (e.g. "US US")
 - Normalize international amounts to account/user local currency when parsed amount is suspicious
-- Use AI as fallback only for low-confidence rows (OpenAI/Ollama when configured)
 """
 from __future__ import annotations
 
-import json
 import re
 from typing import Any, Dict, List, Optional
 
-import httpx
-
-from app.core.config import settings
 from app.schemas.import_file import ImportPreviewRow
 from app.services.currency_service import convert_amount
 
@@ -57,17 +52,27 @@ def normalize_pdf_preview_rows(
 
         # Strong heuristic: if parser produced an international row in non-local currency
         # but local amount is tiny, it likely captured the wrong number from the statement.
-        if _is_suspicious_international_amount(row, local_ccy):
+        # Skip this check for bank-specific parsers (bci, etc.) that already set amount=USD.
+        parser_bank = (row.raw_data or {}).get("bank", "")
+        if _is_suspicious_international_amount(row, local_ccy) and parser_bank not in ("bci",):
             corrected = _convert_original_to_local(row, local_ccy)
             if corrected is not None:
                 row.amount = corrected
 
-            # AI fallback only for low-confidence rows where we still look off.
-            ai_hint = _ai_interpret_line(raw_line, local_ccy)
-            if ai_hint:
-                if ai_hint.get("is_noise") is True:
-                    continue
-                _apply_ai_hint(row, ai_hint, local_ccy)
+        # Compute local_amount (CLP equivalent) for international rows so the UI
+        # can always show the local-currency value as the primary display amount.
+        if row.is_international and row.amount is not None:
+            orig_ccy = _normalize_currency_code(row.original_currency or "")
+            if orig_ccy == local_ccy and row.original_amount is not None:
+                # original was already local (e.g. CLP 990 → USD 1.15 for APPLE.COM)
+                sign = -1 if (row.transaction_type or "expense") != "income" else 1
+                row.local_amount = sign * abs(row.original_amount)
+            else:
+                # amount is in USD; convert to local currency
+                converted = convert_amount(abs(row.amount), "USD", local_ccy)
+                if converted is not None:
+                    sign = -1 if (row.transaction_type or "expense") != "income" else 1
+                    row.local_amount = sign * abs(converted)
 
         cleaned.append(row)
 
@@ -114,33 +119,6 @@ def _convert_original_to_local(row: ImportPreviewRow, local_currency: str) -> Op
     return -abs(converted) if (row.transaction_type or "expense") != "income" else abs(converted)
 
 
-def _apply_ai_hint(row: ImportPreviewRow, hint: Dict[str, Any], local_currency: str) -> None:
-    local_amount = hint.get("local_amount")
-    if isinstance(local_amount, (int, float)) and local_amount > 0:
-        row.amount = -abs(float(local_amount)) if (row.transaction_type or "expense") != "income" else abs(float(local_amount))
-
-    original_currency = hint.get("original_currency")
-    if isinstance(original_currency, str) and original_currency.strip():
-        row.original_currency = _normalize_currency_code(original_currency)
-        row.is_international = row.original_currency != local_currency
-
-    original_amount = hint.get("original_amount")
-    if isinstance(original_amount, (int, float)) and float(original_amount) > 0:
-        row.original_amount = float(original_amount)
-
-
-def _ai_interpret_line(line: str, local_currency: str) -> Optional[Dict[str, Any]]:
-    if not line or settings.LLM_PROVIDER.lower() == "mock":
-        return None
-
-    provider = settings.LLM_PROVIDER.lower()
-    if provider == "openai":
-        return _ai_interpret_openai(line, local_currency)
-    if provider == "ollama":
-        return _ai_interpret_ollama(line, local_currency)
-    return None
-
-
 def _normalize_currency_code(code: str) -> str:
     raw = (code or "").strip().upper()
     if not raw:
@@ -148,69 +126,3 @@ def _normalize_currency_code(code: str) -> str:
     return _CURRENCY_ALIASES.get(raw, raw)
 
 
-def _ai_interpret_openai(line: str, local_currency: str) -> Optional[Dict[str, Any]]:
-    try:
-        from openai import OpenAI
-
-        client = OpenAI(api_key=settings.OPENAI_API_KEY)
-        prompt = (
-            "Interpreta esta línea de cartola bancaria y responde SOLO JSON con llaves: "
-            "is_noise (bool), original_currency (string|null), original_amount (number|null), "
-            "local_amount (number|null). "
-            f"La moneda local objetivo es {local_currency}. "
-            "Si la línea no es una transacción real (ej: US US), usa is_noise=true. "
-            "Si detectas gasto internacional, entrega original_currency y original_amount y local_amount convertido a moneda local. "
-            f"\nLínea: {line}"
-        )
-        response = client.chat.completions.create(
-            model=settings.MODEL_NAME,
-            messages=[
-                {"role": "system", "content": "Eres un parser financiero preciso. Respondes solo JSON válido."},
-                {"role": "user", "content": prompt},
-            ],
-            response_format={"type": "json_object"},
-            max_tokens=220,
-        )
-        content = response.choices[0].message.content
-        data = json.loads(content)
-        if data.get("is_noise") is True:
-            return {"is_noise": True}
-        return data if isinstance(data, dict) else None
-    except Exception:
-        return None
-
-
-def _ai_interpret_ollama(line: str, local_currency: str) -> Optional[Dict[str, Any]]:
-    try:
-        payload = {
-            "model": settings.OLLAMA_MODEL,
-            "messages": [
-                {
-                    "role": "system",
-                    "content": "Eres un parser financiero. Respondes solo JSON válido.",
-                },
-                {
-                    "role": "user",
-                    "content": (
-                        "Interpreta esta línea de cartola bancaria y responde SOLO JSON con llaves: "
-                        "is_noise (bool), original_currency (string|null), original_amount (number|null), "
-                        "local_amount (number|null). "
-                        f"La moneda local objetivo es {local_currency}. "
-                        "Si no es transacción real, is_noise=true. "
-                        f"\nLínea: {line}"
-                    ),
-                },
-            ],
-            "format": "json",
-            "stream": False,
-        }
-        with httpx.Client(timeout=httpx.Timeout(30.0)) as client:
-            resp = client.post(f"{settings.OLLAMA_BASE_URL.rstrip('/')}/api/chat", json=payload)
-            resp.raise_for_status()
-            content = resp.json().get("message", {}).get("content", "")
-            data = json.loads(content)
-            if data.get("is_noise") is True:
-                return {"is_noise": True}
-            return data if isinstance(data, dict) else None
-    except Exception:
-        return None

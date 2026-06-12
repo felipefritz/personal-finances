@@ -15,14 +15,11 @@ import DashboardIcon from '@mui/icons-material/Dashboard';
 import AccountBalanceIcon from '@mui/icons-material/AccountBalance';
 import ReceiptLongIcon from '@mui/icons-material/ReceiptLong';
 import CategoryIcon from '@mui/icons-material/Category';
-import RepeatIcon from '@mui/icons-material/Repeat';
-import TrendingUpIcon from '@mui/icons-material/TrendingUp';
 import SavingsIcon from '@mui/icons-material/Savings';
 import PieChartIcon from '@mui/icons-material/PieChart';
 import UploadFileIcon from '@mui/icons-material/UploadFile';
 import LinkIcon from '@mui/icons-material/Link';
 import CalendarMonthIcon from '@mui/icons-material/CalendarMonth';
-import AutoGraphIcon from '@mui/icons-material/AutoGraph';
 
 const NAV_GROUPS = [
   {
@@ -30,7 +27,6 @@ const NAV_GROUPS = [
     items: [
       { label: 'Dashboard', to: '/dashboard', icon: <DashboardIcon fontSize="small" /> },
       { label: 'Proyección', to: '/proyeccion', icon: <CalendarMonthIcon fontSize="small" /> },
-      { label: 'Plan de Ahorro', to: '/savings-plan', icon: <AutoGraphIcon fontSize="small" /> },
     ],
   },
   {
@@ -38,22 +34,14 @@ const NAV_GROUPS = [
     items: [
       { label: 'Cuentas', to: '/accounts', icon: <AccountBalanceIcon fontSize="small" /> },
       { label: 'Movimientos', to: '/transactions', icon: <ReceiptLongIcon fontSize="small" /> },
-      { label: 'Importar', to: '/imports', icon: <UploadFileIcon fontSize="small" /> },
-      { label: 'Conexiones', to: '/bank-connections', icon: <LinkIcon fontSize="small" /> },
-    ],
-  },
-  {
-    group: 'Planificación',
-    items: [
-      { label: 'Presupuestos', to: '/budgets', icon: <PieChartIcon fontSize="small" /> },
-      { label: 'Gastos Fijos', to: '/fixed-expenses', icon: <RepeatIcon fontSize="small" /> },
-      { label: 'Ingresos Recurrentes', to: '/recurring-incomes', icon: <TrendingUpIcon fontSize="small" /> },
-      { label: 'Objetivos', to: '/savings-goals', icon: <SavingsIcon fontSize="small" /> },
+      { label: 'Planificación', to: '/planning', icon: <PieChartIcon fontSize="small" /> },
     ],
   },
   {
     group: 'Datos',
     items: [
+      { label: 'Conexiones', to: '/bank-connections', icon: <LinkIcon fontSize="small" /> },
+      { label: 'Importar', to: '/imports', icon: <UploadFileIcon fontSize="small" /> },
       { label: 'Categorías', to: '/categories', icon: <CategoryIcon fontSize="small" /> },
     ],
   },

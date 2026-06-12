@@ -26,14 +26,13 @@ import EditIcon from '@mui/icons-material/Edit';
 import DeleteIcon from '@mui/icons-material/Delete';
 import AutoGraphIcon from '@mui/icons-material/AutoGraph';
 import SavingsIcon from '@mui/icons-material/Savings';
-import { getBudgets, createBudget, updateBudget, deleteBudget, getBudgetRecommendations, applyBudgetRecommendations } from '../api/budgets';
-import { getCategories } from '../api/categories';
-import type { Budget } from '../types';
-import { formatCurrency, MONTH_NAMES } from '../utils/formatters';
-import PageHeader from '../components/common/PageHeader';
-import LoadingSpinner from '../components/common/LoadingSpinner';
-import ConfirmDialog from '../components/common/ConfirmDialog';
-import CategoryAutocomplete from '../components/common/CategoryAutocomplete';
+import { getBudgets, createBudget, updateBudget, deleteBudget, getBudgetRecommendations, applyBudgetRecommendations } from '../../api/budgets';
+import { getCategories } from '../../api/categories';
+import type { Budget } from '../../types';
+import { formatCurrency, MONTH_NAMES } from '../../utils/formatters';
+import LoadingSpinner from '../common/LoadingSpinner';
+import ConfirmDialog from '../common/ConfirmDialog';
+import CategoryAutocomplete from '../common/CategoryAutocomplete';
 
 const now = new Date();
 const EMPTY_FORM: Partial<Budget> = {
@@ -44,7 +43,7 @@ const EMPTY_FORM: Partial<Budget> = {
   is_recurring: false,
 };
 
-export default function BudgetsPage() {
+export default function BudgetsTab() {
   const qc = useQueryClient();
   const [month, setMonth] = useState(now.getMonth() + 1);
   const [year, setYear] = useState(now.getFullYear());
@@ -101,11 +100,12 @@ export default function BudgetsPage() {
 
   return (
     <Box>
-      <PageHeader
-        title="Presupuestos"
-        subtitle={`Presupuestado ${formatCurrency(totalBudget)} - Gastado ${formatCurrency(totalActual)}`}
-        action={{ label: 'Nuevo Presupuesto', onClick: openCreate }}
-      />
+      <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 2 }}>
+        <Typography variant="body2" color="text.secondary">
+          {`Presupuestado ${formatCurrency(totalBudget)} - Gastado ${formatCurrency(totalActual)}`}
+        </Typography>
+        <Button variant="contained" onClick={openCreate}>Nuevo Presupuesto</Button>
+      </Box>
 
       <Box sx={{ display: 'flex', gap: 2, mb: 2 }}>
         <TextField select size="small" label="Mes" value={month} onChange={(e) => setMonth(Number(e.target.value))}>

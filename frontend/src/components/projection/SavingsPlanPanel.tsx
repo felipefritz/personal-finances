@@ -24,15 +24,14 @@ import SavingsIcon from '@mui/icons-material/Savings';
 import AccountBalanceWalletIcon from '@mui/icons-material/AccountBalanceWallet';
 import FlagIcon from '@mui/icons-material/Flag';
 
-import { getSavingsAnnualProjection, getSavingsDistributionPlan } from '../api/savingsGoals';
+import { getSavingsAnnualProjection, getSavingsDistributionPlan } from '../../api/savingsGoals';
 import type {
   SavingsAnnualProjectionMonth,
   SavingsDistributionAccountItem,
   SavingsDistributionGoalItem,
-} from '../types';
-import { formatCurrency, formatDate } from '../utils/formatters';
-import LoadingSpinner from '../components/common/LoadingSpinner';
-import PageHeader from '../components/common/PageHeader';
+} from '../../types';
+import { formatCurrency, formatDate } from '../../utils/formatters';
+import LoadingSpinner from '../common/LoadingSpinner';
 
 function FeasibilityChip({ value }: { value: 'on_track' | 'tight' | 'unfunded' }) {
   if (value === 'on_track') return <Chip size="small" color="success" label="Factible" variant="outlined" />;
@@ -40,7 +39,7 @@ function FeasibilityChip({ value }: { value: 'on_track' | 'tight' | 'unfunded' }
   return <Chip size="small" color="error" label="Sin capacidad" variant="outlined" />;
 }
 
-export default function SavingsPlannerPage() {
+export default function SavingsPlanPanel() {
   const currentYear = new Date().getFullYear();
   const [startMonth, setStartMonth] = useState(`${currentYear}-01`);
   const [endMonth, setEndMonth] = useState(`${currentYear}-12`);
@@ -69,11 +68,6 @@ export default function SavingsPlannerPage() {
 
   return (
     <Box>
-      <PageHeader
-        title="Plan de Ahorro"
-        subtitle="Distribución mensual sugerida entre objetivos y cuentas de ahorro"
-      />
-
       <Grid container spacing={2} sx={{ mb: 3 }}>
         <Grid item xs={12} md={4}>
           <Card elevation={0} sx={{ border: '1px solid', borderColor: 'divider', height: '100%' }}>

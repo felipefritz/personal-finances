@@ -27,15 +27,14 @@ import {
 import EditIcon from '@mui/icons-material/Edit';
 import DeleteIcon from '@mui/icons-material/Delete';
 import AddIcon from '@mui/icons-material/Add';
-import { getRecurringIncomes, createRecurringIncome, updateRecurringIncome, deleteRecurringIncome } from '../api/recurringIncomes';
-import { getCategories } from '../api/categories';
-import { getAccounts } from '../api/accounts';
-import type { RecurringIncome } from '../types';
-import { formatCurrency } from '../utils/formatters';
-import PageHeader from '../components/common/PageHeader';
-import LoadingSpinner from '../components/common/LoadingSpinner';
-import ConfirmDialog from '../components/common/ConfirmDialog';
-import CategoryAutocomplete from '../components/common/CategoryAutocomplete';
+import { getRecurringIncomes, createRecurringIncome, updateRecurringIncome, deleteRecurringIncome } from '../../api/recurringIncomes';
+import { getCategories } from '../../api/categories';
+import { getAccounts } from '../../api/accounts';
+import type { RecurringIncome } from '../../types';
+import { formatCurrency } from '../../utils/formatters';
+import LoadingSpinner from '../common/LoadingSpinner';
+import ConfirmDialog from '../common/ConfirmDialog';
+import CategoryAutocomplete from '../common/CategoryAutocomplete';
 
 const INCOME_TYPES = [
   { value: 'sueldo', label: 'Sueldo' },
@@ -54,7 +53,7 @@ const EMPTY_FORM: Partial<RecurringIncome> = {
   is_active: true,
 };
 
-export default function RecurringIncomesPage() {
+export default function RecurringIncomesTab() {
   const qc = useQueryClient();
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState<RecurringIncome | null>(null);
@@ -115,11 +114,10 @@ export default function RecurringIncomesPage() {
 
   return (
     <Box>
-      <PageHeader
-        title="Ingresos Recurrentes"
-        subtitle="Define tus sueldos, honorarios y otros ingresos periódicos"
-        action={{ label: 'Nuevo Ingreso', onClick: openNew, icon: <AddIcon /> }}
-      />
+      <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 2 }}>
+        <Typography variant="body2" color="text.secondary">Define tus sueldos, honorarios y otros ingresos periódicos</Typography>
+        <Button variant="contained" startIcon={<AddIcon />} onClick={openNew}>Nuevo Ingreso</Button>
+      </Box>
 
       <Stack direction="row" spacing={2} mb={2}>
         <Chip label={`${items.length} ingresos definidos`} />

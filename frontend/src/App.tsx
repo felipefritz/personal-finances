@@ -4,13 +4,9 @@ import DashboardPage from './pages/DashboardPage';
 import AccountsPage from './pages/AccountsPage';
 import TransactionsPage from './pages/TransactionsPage';
 import CategoriesPage from './pages/CategoriesPage';
-import FixedExpensesPage from './pages/FixedExpensesPage';
-import SavingsGoalsPage from './pages/SavingsGoalsPage';
-import SavingsPlannerPage from './pages/SavingsPlannerPage';
-import BudgetsPage from './pages/BudgetsPage';
+import PlanningPage from './pages/PlanningPage';
 import ImportsPage from './pages/ImportsPage';
 import BankConnectionsPage from './pages/BankConnectionsPage';
-import RecurringIncomesPage from './pages/RecurringIncomesPage';
 import ProjectionPage from './pages/ProjectionPage';
 
 export default function App() {
@@ -22,14 +18,16 @@ export default function App() {
         <Route path="accounts" element={<AccountsPage />} />
         <Route path="transactions" element={<TransactionsPage />} />
         <Route path="categories" element={<CategoriesPage />} />
-        <Route path="fixed-expenses" element={<FixedExpensesPage />} />
-          <Route path="recurring-incomes" element={<RecurringIncomesPage />} />
-        <Route path="savings-goals" element={<SavingsGoalsPage />} />
-        <Route path="savings-plan" element={<SavingsPlannerPage />} />
-        <Route path="budgets" element={<BudgetsPage />} />
+        <Route path="planning" element={<PlanningPage />} />
         <Route path="proyeccion" element={<ProjectionPage />} />
         <Route path="imports" element={<ImportsPage />} />
         <Route path="bank-connections" element={<BankConnectionsPage />} />
+        {/* Redirects from removed routes */}
+        <Route path="fixed-expenses" element={<Navigate to="/planning?tab=fixed" replace />} />
+        <Route path="recurring-incomes" element={<Navigate to="/planning?tab=incomes" replace />} />
+        <Route path="budgets" element={<Navigate to="/planning?tab=budgets" replace />} />
+        <Route path="savings-goals" element={<Navigate to="/planning?tab=goals" replace />} />
+        <Route path="savings-plan" element={<Navigate to="/proyeccion?tab=ahorro" replace />} />
       </Route>
     </Routes>
   );

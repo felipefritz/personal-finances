@@ -23,12 +23,11 @@ import {
 import EditIcon from '@mui/icons-material/Edit';
 import DeleteIcon from '@mui/icons-material/Delete';
 import PlaylistAddIcon from '@mui/icons-material/PlaylistAdd';
-import { getSavingsGoals, createSavingsGoal, updateSavingsGoal, deleteSavingsGoal, getSavingsGoalPlan } from '../api/savingsGoals';
-import type { SavingsGoal } from '../types';
-import { formatCurrency, formatDate } from '../utils/formatters';
-import PageHeader from '../components/common/PageHeader';
-import LoadingSpinner from '../components/common/LoadingSpinner';
-import ConfirmDialog from '../components/common/ConfirmDialog';
+import { getSavingsGoals, createSavingsGoal, updateSavingsGoal, deleteSavingsGoal, getSavingsGoalPlan } from '../../api/savingsGoals';
+import type { SavingsGoal } from '../../types';
+import { formatCurrency, formatDate } from '../../utils/formatters';
+import LoadingSpinner from '../common/LoadingSpinner';
+import ConfirmDialog from '../common/ConfirmDialog';
 
 const EMPTY_FORM: Partial<SavingsGoal> = {
   name: '',
@@ -93,7 +92,7 @@ const SAVINGS_GOAL_TEMPLATES: Array<{ id: string; label: string; description: st
   },
 ];
 
-export default function SavingsGoalsPage() {
+export default function SavingsGoalsTab() {
   const qc = useQueryClient();
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState<SavingsGoal | null>(null);
@@ -162,11 +161,10 @@ export default function SavingsGoalsPage() {
 
   return (
     <Box>
-      <PageHeader
-        title="Objetivos de Ahorro"
-        subtitle="Sigue tu progreso hacia tus metas financieras"
-        action={{ label: 'Nuevo Objetivo', onClick: openCreate }}
-      />
+      <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 2 }}>
+        <Typography variant="body2" color="text.secondary">Sigue tu progreso hacia tus metas financieras</Typography>
+        <Button variant="contained" onClick={openCreate}>Nuevo Objetivo</Button>
+      </Box>
 
       <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.5} sx={{ mb: 2 }}>
         <Button

@@ -37,16 +37,15 @@ import {
   deleteFixedExpense,
   prepayFixedExpense,
   revertFixedExpensePrepay,
-} from '../api/fixedExpenses';
-import { getCategories } from '../api/categories';
-import { getRecurringIncomes } from '../api/recurringIncomes';
-import { getExchangeRates } from '../api/exchangeRates';
-import type { FixedExpense } from '../types';
-import { formatCurrency, formatDate, EXPENSE_TYPES } from '../utils/formatters';
-import PageHeader from '../components/common/PageHeader';
-import LoadingSpinner from '../components/common/LoadingSpinner';
-import ConfirmDialog from '../components/common/ConfirmDialog';
-import CategoryAutocomplete from '../components/common/CategoryAutocomplete';
+} from '../../api/fixedExpenses';
+import { getCategories } from '../../api/categories';
+import { getRecurringIncomes } from '../../api/recurringIncomes';
+import { getExchangeRates } from '../../api/exchangeRates';
+import type { FixedExpense } from '../../types';
+import { formatCurrency, formatDate, EXPENSE_TYPES } from '../../utils/formatters';
+import LoadingSpinner from '../common/LoadingSpinner';
+import ConfirmDialog from '../common/ConfirmDialog';
+import CategoryAutocomplete from '../common/CategoryAutocomplete';
 
 const EMPTY_FORM: Partial<FixedExpense> = {
   name: '',
@@ -104,7 +103,7 @@ const FIXED_EXPENSE_TEMPLATES: Array<{
   },
 ];
 
-export default function FixedExpensesPage() {
+export default function FixedExpensesTab() {
   const qc = useQueryClient();
   const now = new Date();
   const currentMonth = now.getMonth() + 1;
@@ -385,11 +384,10 @@ export default function FixedExpensesPage() {
 
   return (
     <Box>
-      <PageHeader
-        title="Gastos Fijos"
-        subtitle="Suscripciones, servicios y pagos recurrentes"
-        action={{ label: 'Nuevo Gasto Fijo', onClick: openCreate }}
-      />
+      <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 2 }}>
+        <Typography variant="body2" color="text.secondary">Suscripciones, servicios y pagos recurrentes</Typography>
+        <Button variant="contained" onClick={openCreate}>Nuevo Gasto Fijo</Button>
+      </Box>
 
       <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.5} sx={{ mb: 2 }}>
         <Button

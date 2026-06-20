@@ -35,6 +35,7 @@ import { formatCurrency } from '../../utils/formatters';
 import LoadingSpinner from '../common/LoadingSpinner';
 import ConfirmDialog from '../common/ConfirmDialog';
 import CategoryAutocomplete from '../common/CategoryAutocomplete';
+import CategoryLabel from '../common/CategoryLabel';
 
 const INCOME_TYPES = [
   { value: 'sueldo', label: 'Sueldo' },
@@ -160,7 +161,9 @@ export default function RecurringIncomesTab() {
                   </TableCell>
                   <TableCell align="right">{formatCurrency(ri.amount)}</TableCell>
                   <TableCell>{ri.day_of_month ? `Día ${ri.day_of_month}` : '—'}</TableCell>
-                  <TableCell>{ri.category_name ?? '—'}</TableCell>
+                  <TableCell>
+                    <CategoryLabel name={ri.category_name} color={ri.category_color} fallback="—" />
+                  </TableCell>
                   <TableCell>{ri.account_name ?? '—'}</TableCell>
                   <TableCell>
                     <Chip

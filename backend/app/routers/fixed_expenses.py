@@ -21,14 +21,29 @@ from app.services.currency_service import convert_fixed_amount_to_clp
 router = APIRouter(prefix="/fixed-expenses", tags=["Fixed Expenses"])
 
 
+def _category_color(cat: Category | None, session: Session) -> str | None:
+    if not cat:
+        return None
+    if cat.color:
+        return cat.color
+    parent = session.get(Category, cat.parent_id) if cat.parent_id else None
+    return parent.color if parent else None
+
+
 def _enrich(fe: FixedExpense, session: Session) -> FixedExpenseRead:
     cat = session.get(Category, fe.category_id) if fe.category_id else None
     acc = session.get(Account, fe.account_id) if fe.account_id else None
     data = fe.model_dump()
     amount_clp = convert_fixed_amount_to_clp(fe.expected_amount, fe.currency)
     data["category_name"] = cat.name if cat else None
+    data["category_color"] = _category_color(cat, session)
     data["account_name"] = acc.name if acc else None
     data["expected_amount_clp"] = amount_clp
+    data["total_debt_clp"] = (
+        round(amount_clp * max(fe.total_installments or 0, 0), 0)
+        if amount_clp is not None and fe.total_installments
+        else None
+    )
     data["remaining_debt_clp"] = (
         round(amount_clp * max(fe.remaining_installments or 0, 0), 0)
         if amount_clp is not None and fe.remaining_installments
@@ -37,11 +52,28 @@ def _enrich(fe: FixedExpense, session: Session) -> FixedExpenseRead:
     return FixedExpenseRead(**data)
 
 
-def _normalize_fixed_expense_payload(data: dict) -> dict:
+def _normalize_fixed_expense_payload(data: dict, existing: FixedExpense | None = None) -> dict:
     normalized = dict(data)
-    expense_type = normalized.get("expense_type")
-    currency = (normalized.get("currency") or "CLP").upper()
+    amount_mode = normalized.pop("amount_mode", None)
+    expense_type = normalized.get("expense_type", existing.expense_type if existing else None)
+    currency = (normalized.get("currency") or (existing.currency if existing else "CLP")).upper()
     normalized["currency"] = "UF" if expense_type == "dividendo" else currency
+
+    if amount_mode == "total" and normalized.get("expected_amount") is not None:
+        total_installments = normalized.get("total_installments")
+        if total_installments is None and existing is not None:
+            total_installments = existing.total_installments
+        if not total_installments or int(total_installments) <= 0:
+            raise HTTPException(
+                status_code=400,
+                detail="Para ingresar monto total debes indicar cuotas totales",
+            )
+
+        precision = 4 if normalized["currency"] == "UF" else 2
+        normalized["expected_amount"] = round(
+            float(normalized["expected_amount"]) / int(total_installments),
+            precision,
+        )
     return normalized
 
 
@@ -73,7 +105,7 @@ def update_fixed_expense(fe_id: int, data: FixedExpenseUpdate, session: Session 
     fe = session.get(FixedExpense, fe_id)
     if not fe:
         raise HTTPException(status_code=404, detail="Gasto fijo no encontrado")
-    update_data = _normalize_fixed_expense_payload(data.model_dump(exclude_unset=True))
+    update_data = _normalize_fixed_expense_payload(data.model_dump(exclude_unset=True), existing=fe)
     update_data["updated_at"] = datetime.utcnow()
     for key, value in update_data.items():
         setattr(fe, key, value)

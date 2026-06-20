@@ -22,6 +22,33 @@ export interface Account {
   credit_limit?: number;
   available_credit?: number;
   future_installments_commitment?: number;
+  reserved_amount: number;
+  free_balance?: number;
+}
+
+export interface MoneyAllocation {
+  id: number;
+  account_id: number;
+  account_name?: string;
+  amount: number;
+  target_type: 'budget' | 'goal';
+  budget_id?: number;
+  savings_goal_id?: number;
+  target_name?: string;
+  target_period?: string;
+  status: 'active' | 'released';
+  notes?: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface MoneyAllocationInput {
+  account_id: number;
+  amount: number;
+  target_type: 'budget' | 'goal';
+  budget_id?: number;
+  savings_goal_id?: number;
+  notes?: string;
 }
 
 export interface Category {
@@ -61,6 +88,7 @@ export interface Transaction {
   fixed_expense_id?: number;
   import_file_id?: number;
   category_name?: string;
+  category_color?: string;
   account_name?: string;
   created_at: string;
   updated_at: string;
@@ -105,11 +133,14 @@ export interface FixedExpense {
   account_id?: number;
   is_active: boolean;
   expense_type: string;
-  total_installments?: number;
-  remaining_installments?: number;
+  total_installments?: number | null;
+  remaining_installments?: number | null;
+  amount_mode?: 'monthly' | 'total';
   category_name?: string;
+  category_color?: string;
   account_name?: string;
   expected_amount_clp?: number;
+  total_debt_clp?: number;
   remaining_debt_clp?: number;
   created_at: string;
   updated_at: string;
@@ -149,6 +180,7 @@ export interface RecurringIncome {
   income_type: string;
   is_active: boolean;
   category_name?: string;
+  category_color?: string;
   account_name?: string;
   created_at: string;
   updated_at: string;
@@ -172,6 +204,9 @@ export interface SavingsGoal {
   available_monthly_savings?: number;
   other_goals_monthly_commitment?: number;
   available_liquid_balance?: number;
+  reserved_amount: number;
+  total_available_amount: number;
+  remaining_after_reserved: number;
   created_at: string;
   updated_at: string;
 }
@@ -252,6 +287,9 @@ export interface Budget {
   is_recurring: boolean;
   difference: number;
   status: 'ok' | 'near_limit' | 'exceeded';
+  reserved_amount: number;
+  funding_gap: number;
+  free_to_spend: number;
   category_name?: string;
   category_color?: string;
   created_at: string;
@@ -329,36 +367,43 @@ export interface ImportPreviewResponse {
   duplicate_count: number;
 }
 
+// Estado posible de una conexión: connected | action_required | error | disconnected
+export type BankConnectionStatus = 'connected' | 'action_required' | 'error' | 'disconnected';
+
+export interface BankProvider {
+  id: string;   // bci | banco_chile | santander | banco_estado | fake
+  label: string;
+}
+
 export interface BankConnection {
   id: number;
   provider: string;
+  provider_label?: string;
   display_name: string;
-  status: string;
+  status: BankConnectionStatus;
   last_sync?: string;
-  account_id?: number;
-  has_access_token?: boolean;
-  access_token_masked?: string;
-  has_fintoc_secret_key?: boolean;
-  fintoc_secret_key_masked?: string;
+  last_error?: string;
+  last_error_at?: string;
+  rut_masked?: string;
+  has_credentials?: boolean;
   created_at: string;
   updated_at: string;
 }
 
-export interface FintocConnectValidation {
-  tested: boolean;
-  accounts_count: number;
-  sample_account_id?: string;
-  sample_movements_count: number;
+// Cuenta descubierta por el scraper (cacheada en la metadata de la conexión).
+export interface ScrapedProviderAccount {
+  external_id: string;
+  name: string;
+  account_type: string;   // corriente | vista | ahorro | tarjeta_credito
+  balance?: number;
+  currency?: string;
+  bank_name?: string;
+  local_account_id?: number;
+  local_account_name?: string;
+  sync_enabled?: boolean;
 }
 
-export interface FintocConnectResponse {
-  connection_id: number;
-  status: string;
-  mock?: boolean;
-  validation?: FintocConnectValidation;
-}
-
-export interface FintocSyncedAccount {
+export interface BankSyncedAccount {
   provider_account_id: string;
   provider_account_name: string;
   local_account_id?: number;
@@ -368,25 +413,13 @@ export interface FintocSyncedAccount {
   skipped_count: number;
 }
 
-export interface FintocProviderAccount {
-  id: string;
-  name: string;
-  type?: string;
-  currency?: string;
-  balance_amount?: number;
-  local_account_id?: number;
-  local_account_name?: string;
-  sync_enabled?: boolean;
-}
-
-export interface FintocSyncResponse {
+export interface BankSyncResponse {
   synced_count: number;
   saved_count: number;
   skipped_count: number;
-  mock_mode?: boolean;
   connection_id: number;
   note: string;
-  accounts: FintocSyncedAccount[];
+  accounts: BankSyncedAccount[];
 }
 
 // Dashboard
@@ -411,6 +444,9 @@ export interface DashboardSummary {
   expenses: number;
   savings: number;
   savings_percent: number;
+  effective_expenses?: number;
+  effective_savings?: number;
+  effective_savings_percent?: number;
   fixed_expenses: number;
   variable_expenses: number;
   ant_expenses: number;

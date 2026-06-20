@@ -7,10 +7,10 @@ import BudgetsTab from '../components/planning/BudgetsTab';
 import SavingsGoalsTab from '../components/planning/SavingsGoalsTab';
 
 const TABS = [
-  { key: 'fixed', label: 'Gastos Fijos' },
+  { key: 'fixed', label: 'Gastos fijos' },
   { key: 'incomes', label: 'Ingresos' },
   { key: 'budgets', label: 'Presupuestos' },
-  { key: 'goals', label: 'Metas de Ahorro' },
+  { key: 'goals', label: 'Metas de ahorro' },
 ] as const;
 
 type TabKey = (typeof TABS)[number]['key'];
@@ -27,8 +27,8 @@ export default function PlanningPage() {
   return (
     <Box>
       <PageHeader
-        title="Planificación"
-        subtitle="Gastos fijos, ingresos recurrentes, presupuestos y metas de ahorro en un solo lugar"
+        title="Presupuestos y metas"
+        subtitle="Ordena ingresos, gastos fijos, límites mensuales y objetivos de ahorro"
       />
       <Tabs
         value={activeTab}

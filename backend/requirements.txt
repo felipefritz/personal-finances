@@ -2,6 +2,7 @@ fastapi>=0.109.0
 uvicorn[standard]>=0.27.0
 sqlmodel>=0.0.16
 pydantic-settings>=2.1.0
+email-validator>=2.1.0
 python-multipart>=0.0.9
 pandas>=2.1.0
 openpyxl>=3.1.2
@@ -9,3 +10,8 @@ pdfplumber>=0.10.0
 python-dotenv>=1.0.0
 aiofiles>=23.2.1
 httpx>=0.26.0
+# Scraping bancario: cifrado de credenciales + automatización de navegador.
+# Tras instalar playwright ejecutar: playwright install chromium
+cryptography>=42.0.0
+playwright>=1.40.0
+beautifulsoup4>=4.12.0

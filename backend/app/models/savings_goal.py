@@ -7,6 +7,7 @@ class SavingsGoal(SQLModel, table=True):
     __tablename__ = "savings_goals"
 
     id: Optional[int] = Field(default=None, primary_key=True)
+    user_id: Optional[int] = Field(default=None, foreign_key="users.id", index=True)
     name: str = Field(max_length=100)
     target_amount: float
     target_date: Optional[date] = Field(default=None)

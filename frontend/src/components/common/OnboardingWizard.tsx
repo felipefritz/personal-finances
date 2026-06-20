@@ -50,10 +50,10 @@ const STEPS = [
     path: '/imports',
   },
   {
-    title: 'Revisa recomendaciones',
+    title: 'Revisa tu mes',
     description:
-      'Consulta Dashboard y Agente IA para ver proyecciones, alertas y recomendaciones accionables.',
-    ctaLabel: 'Ir a Dashboard',
+      'Consulta el inicio y la proyección para ver alertas, meses ajustados y recomendaciones accionables.',
+    ctaLabel: 'Ir a Inicio',
     path: '/dashboard',
   },
 ];

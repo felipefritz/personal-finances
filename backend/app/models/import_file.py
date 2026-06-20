@@ -7,6 +7,7 @@ class ImportFile(SQLModel, table=True):
     __tablename__ = "import_files"
 
     id: Optional[int] = Field(default=None, primary_key=True)
+    user_id: Optional[int] = Field(default=None, foreign_key="users.id", index=True)
     filename: str = Field(max_length=255)
     file_type: str = Field(max_length=20)  # excel, pdf
     status: str = Field(default="pending", max_length=50)  # pending, processing, completed, error

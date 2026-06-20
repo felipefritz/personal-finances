@@ -9,6 +9,7 @@ from app.models.category import Category
 from app.models.transaction import Transaction
 from app.models.fixed_expense import FixedExpense
 from app.services.currency_service import convert_fixed_amount_to_clp
+from app.services.allocation_service import reserved_for_budget
 from app.schemas.budget import (
     BudgetCreate,
     BudgetRead,
@@ -186,6 +187,7 @@ def _compute_actual(budget: Budget, session: Session) -> float:
 
 def _enrich(b: Budget, session: Session) -> BudgetRead:
     cat = session.get(Category, b.category_id) if b.category_id else None
+    parent = session.get(Category, cat.parent_id) if cat and cat.parent_id else None
     actual = _compute_actual(b, session)
     diff = b.expected_amount - actual
 
@@ -200,10 +202,14 @@ def _enrich(b: Budget, session: Session) -> BudgetRead:
 
     data = b.model_dump()
     data["category_name"] = cat.name if cat else None
-    data["category_color"] = cat.color if cat else None
+    data["category_color"] = cat.color if cat and cat.color else parent.color if parent else None
     data["actual_amount"] = actual
     data["difference"] = diff
     data["status"] = bstatus
+    reserved = reserved_for_budget(session, b.id or 0)
+    data["reserved_amount"] = reserved
+    data["funding_gap"] = round(max(b.expected_amount - reserved, 0), 2)
+    data["free_to_spend"] = round(max(min(reserved, b.expected_amount) - actual, 0), 2)
     return BudgetRead(**data)
 
 

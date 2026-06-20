@@ -529,7 +529,7 @@ export default function ImportsPage() {
 
             {detectedPeriod && (
               <Alert severity="info" sx={{ mb: 2 }}>
-                Periodo detectado en cartola: {detectedPeriod.minLabel} a {detectedPeriod.maxLabel}. Si no ves datos en Dashboard/Agente,
+                Periodo detectado en cartola: {detectedPeriod.minLabel} a {detectedPeriod.maxLabel}. Si no ves datos en Inicio o Proyección,
                 selecciona ese mes y anio en los filtros.
               </Alert>
             )}

@@ -7,6 +7,7 @@ class Transaction(SQLModel, table=True):
     __tablename__ = "transactions"
 
     id: Optional[int] = Field(default=None, primary_key=True)
+    user_id: Optional[int] = Field(default=None, foreign_key="users.id", index=True)
     date: date
     description: str = Field(max_length=500)
     amount: float  # positive = income, use sign convention with transaction_type

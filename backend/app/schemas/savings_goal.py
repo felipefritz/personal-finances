@@ -1,6 +1,8 @@
 from typing import Optional
 from datetime import datetime, date
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
+
+from app.core.text_normalization import normalize_sentence_text, normalize_title_text
 
 
 class SavingsGoalBase(BaseModel):
@@ -11,6 +13,16 @@ class SavingsGoalBase(BaseModel):
     priority: int = 1
     status: str = "active"
     description: Optional[str] = None
+
+    @field_validator("name", mode="before")
+    @classmethod
+    def normalize_name(cls, value):
+        return normalize_title_text(value)
+
+    @field_validator("description", mode="before")
+    @classmethod
+    def normalize_description(cls, value):
+        return normalize_sentence_text(value)
 
 
 class SavingsGoalCreate(SavingsGoalBase):
@@ -26,6 +38,16 @@ class SavingsGoalUpdate(BaseModel):
     status: Optional[str] = None
     description: Optional[str] = None
 
+    @field_validator("name", mode="before")
+    @classmethod
+    def normalize_name(cls, value):
+        return normalize_title_text(value)
+
+    @field_validator("description", mode="before")
+    @classmethod
+    def normalize_description(cls, value):
+        return normalize_sentence_text(value)
+
 
 class SavingsGoalRead(SavingsGoalBase):
     id: int
@@ -38,6 +60,9 @@ class SavingsGoalRead(SavingsGoalBase):
     available_monthly_savings: Optional[float] = None
     other_goals_monthly_commitment: Optional[float] = None
     available_liquid_balance: Optional[float] = None
+    reserved_amount: float = 0.0
+    total_available_amount: float = 0.0
+    remaining_after_reserved: float = 0.0
     created_at: datetime
     updated_at: datetime
 
@@ -51,6 +76,11 @@ class SavingsGoalPlanRequest(BaseModel):
     target_date: Optional[date] = None
     priority: int = 1
     status: str = "active"
+
+    @field_validator("name", mode="before")
+    @classmethod
+    def normalize_name(cls, value):
+        return normalize_title_text(value)
 
 
 class SavingsGoalPlanResponse(BaseModel):

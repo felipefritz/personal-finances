@@ -1,6 +1,8 @@
 from typing import Optional
 from datetime import datetime
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
+
+from app.core.text_normalization import normalize_title_text
 
 
 class RecurringIncomeBase(BaseModel):
@@ -11,6 +13,11 @@ class RecurringIncomeBase(BaseModel):
     day_of_month: Optional[int] = None
     income_type: str = "sueldo"  # sueldo, honorarios, arriendo, otro
     is_active: bool = True
+
+    @field_validator("name", mode="before")
+    @classmethod
+    def normalize_name(cls, value):
+        return normalize_title_text(value)
 
 
 class RecurringIncomeCreate(RecurringIncomeBase):
@@ -26,10 +33,16 @@ class RecurringIncomeUpdate(BaseModel):
     income_type: Optional[str] = None
     is_active: Optional[bool] = None
 
+    @field_validator("name", mode="before")
+    @classmethod
+    def normalize_name(cls, value):
+        return normalize_title_text(value)
+
 
 class RecurringIncomeRead(RecurringIncomeBase):
     id: int
     category_name: Optional[str] = None
+    category_color: Optional[str] = None
     account_name: Optional[str] = None
     created_at: datetime
     updated_at: datetime

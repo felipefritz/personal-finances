@@ -1,3 +1,4 @@
+from app.routers.auth import router as auth_router
 from app.routers.dashboard import router as dashboard_router
 from app.routers.accounts import router as accounts_router
 from app.routers.transactions import router as transactions_router
@@ -10,9 +11,12 @@ from app.routers.bank_connections import router as bank_connections_router
 from app.routers.exchange_rates import router as exchange_rates_router
 from app.routers.recurring_incomes import router as recurring_incomes_router
 from app.routers.projections import router as projections_router
+from app.routers.money_allocations import router as money_allocations_router
+from app.routers.mobile import router as mobile_router
 
 __all__ = [
     "dashboard_router",
+    "auth_router",
     "accounts_router",
     "transactions_router",
     "categories_router",
@@ -24,4 +28,6 @@ __all__ = [
     "exchange_rates_router",
     "recurring_incomes_router",
     "projections_router",
+    "money_allocations_router",
+    "mobile_router",
 ]

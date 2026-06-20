@@ -60,11 +60,15 @@ export default function ProjectionPage() {
 
   return (
     <Box>
-      {/* Header */}
       <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2} alignItems={{ xs: 'flex-start', sm: 'center' }} mb={2}>
-        <Typography variant="h5" fontWeight={700} flexGrow={1}>
-          Proyección
-        </Typography>
+        <Box flexGrow={1} minWidth={220}>
+          <Typography variant="h5" fontWeight={700}>
+            Proyección financiera
+          </Typography>
+          <Typography variant="body2" color="text.secondary">
+            Anticipa meses ajustados, cuotas pendientes y ahorro posible.
+          </Typography>
+        </Box>
         <FormControlLabel
           control={
             <Switch
@@ -72,7 +76,7 @@ export default function ProjectionPage() {
               onChange={(e) => setIncludeInternalTransfers(e.target.checked)}
             />
           }
-          label="Incluir traspasos internos"
+          label="Mostrar traspasos internos"
         />
         <FormControl size="small" sx={{ minWidth: 100 }}>
           <InputLabel>Año</InputLabel>

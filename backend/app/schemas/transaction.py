@@ -1,6 +1,8 @@
 from typing import Optional, List
 from datetime import datetime, date
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
+
+from app.core.text_normalization import normalize_sentence_text
 
 # Alias to avoid Python 3.13 name-shadowing bug: when a field is named `date`
 # and has a default value (date: Optional[date] = None), the annotation resolves
@@ -34,6 +36,11 @@ class TransactionBase(BaseModel):
     installment_total: Optional[int] = None
     installment_base_amount: Optional[float] = None
 
+    @field_validator("description", "comment", "tags", mode="before")
+    @classmethod
+    def normalize_text_fields(cls, value):
+        return normalize_sentence_text(value)
+
 
 class TransactionCreate(TransactionBase):
     pass
@@ -60,11 +67,17 @@ class TransactionUpdate(BaseModel):
     status: Optional[str] = None
     fixed_expense_id: Optional[int] = None
 
+    @field_validator("description", "comment", "tags", mode="before")
+    @classmethod
+    def normalize_text_fields(cls, value):
+        return normalize_sentence_text(value)
+
 
 class TransactionRead(TransactionBase):
     id: int
     import_file_id: Optional[int] = None
     category_name: Optional[str] = None
+    category_color: Optional[str] = None
     account_name: Optional[str] = None
     exchange_rate_usd: Optional[float] = None  # CLP per 1 USD used for conversion
     created_at: datetime

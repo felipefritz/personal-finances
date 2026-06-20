@@ -33,6 +33,7 @@ import { formatCurrency, MONTH_NAMES } from '../../utils/formatters';
 import LoadingSpinner from '../common/LoadingSpinner';
 import ConfirmDialog from '../common/ConfirmDialog';
 import CategoryAutocomplete from '../common/CategoryAutocomplete';
+import CategoryLabel from '../common/CategoryLabel';
 
 const now = new Date();
 const EMPTY_FORM: Partial<Budget> = {
@@ -83,6 +84,7 @@ export default function BudgetsTab() {
 
   const totalBudget = budgets.reduce((s, b) => s + b.expected_amount, 0);
   const totalActual = budgets.reduce((s, b) => s + Math.abs(b.actual_amount || 0), 0);
+  const totalReserved = budgets.reduce((s, b) => s + (b.reserved_amount ?? 0), 0);
   const selectedRecommendationItem = recommendation?.items.find((item) => item.category_id === selectedRecommendationCategoryId) ?? recommendation?.items[0];
 
   useEffect(() => {
@@ -102,7 +104,7 @@ export default function BudgetsTab() {
     <Box>
       <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 2 }}>
         <Typography variant="body2" color="text.secondary">
-          {`Presupuestado ${formatCurrency(totalBudget)} - Gastado ${formatCurrency(totalActual)}`}
+          {`Presupuestado ${formatCurrency(totalBudget)} · Reservado ${formatCurrency(totalReserved)} · Gastado ${formatCurrency(totalActual)}`}
         </Typography>
         <Button variant="contained" onClick={openCreate}>Nuevo Presupuesto</Button>
       </Box>
@@ -179,7 +181,7 @@ export default function BudgetsTab() {
                   {selectedRecommendationItem && (
                     <>
                       <Stack direction="row" justifyContent="space-between" alignItems="center" mb={1}>
-                        <Typography variant="subtitle1" fontWeight={700}>{selectedRecommendationItem.category_name}</Typography>
+                        <CategoryLabel name={selectedRecommendationItem.category_name} color={categories.find((c) => c.id === selectedRecommendationItem.category_id)?.color} size="medium" fontWeight={700} />
                         <Chip size="small" label={selectedRecommendationItem.bucket === 'needs' ? 'Necesidad' : 'Deseo'} color={selectedRecommendationItem.bucket === 'needs' ? 'primary' : 'secondary'} />
                       </Stack>
                       <Typography variant="h6" color="primary.main" fontWeight={700}>
@@ -211,10 +213,19 @@ export default function BudgetsTab() {
           const status = budget.status === 'near_limit' ? 'near' : budget.status;
           return (
             <Grid item xs={12} sm={6} md={4} key={budget.id}>
-              <Card elevation={0} sx={{ border: '1px solid', borderColor: 'divider', height: '100%' }}>
+              <Card
+                elevation={0}
+                sx={{
+                  border: '1px solid',
+                  borderColor: 'divider',
+                  borderLeft: '5px solid',
+                  borderLeftColor: budget.category_color || 'divider',
+                  height: '100%',
+                }}
+              >
                 <CardContent>
                   <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
-                    <Typography variant="h6" fontWeight={700}>{budget.category_name || 'Sin categoría'}</Typography>
+                    <CategoryLabel name={budget.category_name} color={budget.category_color} size="medium" fontWeight={700} />
                     <Box>
                       <IconButton size="small" onClick={() => openEdit(budget)}><EditIcon fontSize="small" /></IconButton>
                       <IconButton size="small" color="error" onClick={() => setDeleteId(budget.id)}><DeleteIcon fontSize="small" /></IconButton>
@@ -222,6 +233,12 @@ export default function BudgetsTab() {
                   </Box>
                   <Typography variant="body2" color="text.secondary">Presupuesto: {formatCurrency(budget.expected_amount)}</Typography>
                   <Typography variant="body2" color="text.secondary" gutterBottom>Gastado: {formatCurrency(actual)}</Typography>
+                  <Typography variant="body2" color={(budget.funding_gap ?? 0) > 0 ? 'warning.main' : 'success.main'} gutterBottom>
+                    Reservado: {formatCurrency(budget.reserved_amount ?? 0)}
+                    {(budget.funding_gap ?? 0) > 0
+                      ? ` · falta ${formatCurrency(budget.funding_gap)}`
+                      : ` · libre para gastar ${formatCurrency(budget.free_to_spend ?? 0)}`}
+                  </Typography>
                   <LinearProgress
                     variant="determinate"
                     value={Math.min(100, pct)}

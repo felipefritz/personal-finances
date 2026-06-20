@@ -8,6 +8,7 @@ from app.core.database import get_session
 from app.models.account import Account
 from app.models.savings_goal import SavingsGoal
 from app.models.transaction import Transaction
+from app.services.allocation_service import reserved_for_goal
 from app.services.financial_policy import suggested_savings_capacity_from_cashflow
 from app.schemas.savings_goal import (
     SavingsGoalCreate,
@@ -213,6 +214,10 @@ def _enrich(goal: SavingsGoal, session: Session) -> SavingsGoalRead:
     target = goal.target_amount or 1
     data["progress_percent"] = round(min((goal.current_amount / target) * 100, 100), 1)
     data.update(_build_plan(goal, session))
+    reserved = reserved_for_goal(session, goal.id or 0)
+    data["reserved_amount"] = reserved
+    data["total_available_amount"] = round(float(goal.current_amount or 0) + reserved, 2)
+    data["remaining_after_reserved"] = round(max(float(goal.target_amount or 0) - data["total_available_amount"], 0), 2)
     return SavingsGoalRead(**data)
 
 

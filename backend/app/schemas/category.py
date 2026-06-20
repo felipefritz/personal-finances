@@ -1,6 +1,8 @@
 from typing import Optional, List
 from datetime import datetime
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
+
+from app.core.text_normalization import normalize_title_text
 
 
 class CategoryBase(BaseModel):
@@ -9,6 +11,11 @@ class CategoryBase(BaseModel):
     color: Optional[str] = None
     icon: Optional[str] = None
     is_system: bool = False
+
+    @field_validator("name", mode="before")
+    @classmethod
+    def normalize_name(cls, value):
+        return normalize_title_text(value)
 
 
 class CategoryCreate(CategoryBase):
@@ -20,6 +27,11 @@ class CategoryUpdate(BaseModel):
     parent_id: Optional[int] = None
     color: Optional[str] = None
     icon: Optional[str] = None
+
+    @field_validator("name", mode="before")
+    @classmethod
+    def normalize_name(cls, value):
+        return normalize_title_text(value)
 
 
 class CategoryRead(CategoryBase):

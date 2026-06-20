@@ -23,6 +23,8 @@ import {
   Checkbox,
   FormControlLabel,
   Typography,
+  ToggleButton,
+  ToggleButtonGroup,
 } from '@mui/material';
 import EditIcon from '@mui/icons-material/Edit';
 import DeleteIcon from '@mui/icons-material/Delete';
@@ -46,6 +48,10 @@ import { formatCurrency, formatDate, EXPENSE_TYPES } from '../../utils/formatter
 import LoadingSpinner from '../common/LoadingSpinner';
 import ConfirmDialog from '../common/ConfirmDialog';
 import CategoryAutocomplete from '../common/CategoryAutocomplete';
+import CategoryLabel from '../common/CategoryLabel';
+
+type AmountInputMode = 'monthly' | 'total';
+type PaymentPlanMode = 'recurring' | 'installments';
 
 const EMPTY_FORM: Partial<FixedExpense> = {
   name: '',
@@ -112,6 +118,8 @@ export default function FixedExpensesTab() {
   const [editing, setEditing] = useState<FixedExpense | null>(null);
   const [deleteId, setDeleteId] = useState<number | null>(null);
   const [form, setForm] = useState<Partial<FixedExpense>>(EMPTY_FORM);
+  const [paymentPlanMode, setPaymentPlanMode] = useState<PaymentPlanMode>('recurring');
+  const [amountInputMode, setAmountInputMode] = useState<AmountInputMode>('monthly');
   const [templatesOpen, setTemplatesOpen] = useState(false);
   const [selectedTemplates, setSelectedTemplates] = useState<string[]>(FIXED_EXPENSE_TEMPLATES.map((t) => t.id));
   const [templatesSummary, setTemplatesSummary] = useState<string | null>(null);
@@ -136,6 +144,7 @@ export default function FixedExpensesTab() {
   });
 
   const toClpAmount = (item: Partial<FixedExpense>) => item.expected_amount_clp ?? item.expected_amount ?? 0;
+  const toOriginalDebtClp = (item: Partial<FixedExpense>) => item.total_debt_clp ?? ((item.total_installments ?? 0) * toClpAmount(item));
   const toRemainingDebtClp = (item: Partial<FixedExpense>) => item.remaining_debt_clp ?? ((item.remaining_installments ?? 0) * toClpAmount(item));
   const isMortgageExpense = (expenseType?: string) => expenseType === 'dividendo';
 
@@ -151,9 +160,9 @@ export default function FixedExpensesTab() {
   }, [monthlyIncomeBase, recurringIncomeTotal]);
 
   const categoriesById = useMemo(() => {
-    const map = new Map<number, { id: number; name: string; parent_id?: number }>();
+    const map = new Map<number, { id: number; name: string; parent_id?: number; color?: string }>();
     categories.forEach((cat) => {
-      map.set(cat.id, { id: cat.id, name: cat.name, parent_id: cat.parent_id });
+      map.set(cat.id, { id: cat.id, name: cat.name, parent_id: cat.parent_id, color: cat.color });
     });
     return map;
   }, [categories]);
@@ -241,17 +250,25 @@ export default function FixedExpensesTab() {
     return normalized > 0 ? normalized : undefined;
   };
 
+  const liveRawAmount = form.expected_amount ?? 0;
+  const usesInstallments = paymentPlanMode === 'installments';
+  const liveMonthlyAmount = usesInstallments && amountInputMode === 'total' && form.total_installments
+    ? liveRawAmount / form.total_installments
+    : liveRawAmount;
   const liveAmountClp = effectiveCurrency === 'UF' && liveUfValue
+    ? Math.round(liveMonthlyAmount * liveUfValue)
+    : Math.round(liveMonthlyAmount);
+  const liveInputAmountClp = effectiveCurrency === 'UF' && liveUfValue
     ? Math.round((form.expected_amount ?? 0) * liveUfValue)
     : Math.round(form.expected_amount ?? 0);
   const liveTotalUf = effectiveCurrency === 'UF'
-    ? (form.expected_amount ?? 0) * (form.total_installments ?? 0)
+    ? (amountInputMode === 'total' ? liveRawAmount : liveMonthlyAmount * (form.total_installments ?? 0))
     : 0;
   const liveTotalDebtClp = form.total_installments
     ? liveAmountClp * (form.total_installments ?? 0)
     : 0;
   const liveRemainingUf = effectiveCurrency === 'UF'
-    ? (form.expected_amount ?? 0) * (form.remaining_installments ?? 0)
+    ? liveMonthlyAmount * (form.remaining_installments ?? 0)
     : 0;
   const liveRemainingDebtClp = form.remaining_installments
     ? liveAmountClp * (form.remaining_installments ?? 0)
@@ -342,8 +359,26 @@ export default function FixedExpensesTab() {
     },
   });
 
-  const openCreate = () => { setEditing(null); setForm(EMPTY_FORM); setDialogOpen(true); };
-  const openEdit = (x: FixedExpense) => { setEditing(x); setForm(x); setDialogOpen(true); };
+  const openCreate = () => {
+    setEditing(null);
+    setForm(EMPTY_FORM);
+    setPaymentPlanMode('recurring');
+    setAmountInputMode('monthly');
+    setDialogOpen(true);
+  };
+  const openEdit = (x: FixedExpense) => {
+    const hasInstallments = !!x.total_installments && x.total_installments > 0;
+    setEditing(x);
+    setForm(hasInstallments
+      ? {
+          ...x,
+          expected_amount: Number((x.expected_amount * (x.total_installments ?? 1)).toFixed(x.currency === 'UF' ? 4 : 2)),
+        }
+      : x);
+    setPaymentPlanMode(hasInstallments ? 'installments' : 'recurring');
+    setAmountInputMode(hasInstallments ? 'total' : 'monthly');
+    setDialogOpen(true);
+  };
   const openPrepay = (x: FixedExpense) => {
     setPrepayTarget(x);
     setPrepayMode('prepay');
@@ -368,13 +403,16 @@ export default function FixedExpensesTab() {
     ? Math.max(prepayCurrentRemainingInstallments - normalizedPrepayInstallments, 0)
     : prepayCurrentRemainingInstallments + normalizedPrepayInstallments;
   const prepayTotalDebtAfterClp = prepayRemainingInstallmentsAfter * prepayMonthlyAmountClp;
+  const cannotSaveTotalAmount = usesInstallments && amountInputMode === 'total' && !form.total_installments;
   const handleSave = () => {
-    const payload = {
+    if (cannotSaveTotalAmount) return;
+    const payload: Partial<FixedExpense> = {
       ...form,
       currency: isMortgageExpense(form.expense_type) ? 'UF' : (form.currency ?? 'CLP'),
+      amount_mode: usesInstallments ? amountInputMode : 'monthly',
       start_date: form.start_date || undefined,
-      total_installments: form.total_installments && form.total_installments > 0 ? form.total_installments : undefined,
-      remaining_installments: form.remaining_installments && form.remaining_installments > 0 ? form.remaining_installments : undefined,
+      total_installments: usesInstallments && form.total_installments && form.total_installments > 0 ? form.total_installments : null,
+      remaining_installments: usesInstallments && form.remaining_installments && form.remaining_installments > 0 ? form.remaining_installments : null,
     };
     if (editing) updateMut.mutate({ id: editing.id, data: payload });
     else createMut.mutate(payload);
@@ -514,7 +552,7 @@ export default function FixedExpensesTab() {
                   <TableCell>Día</TableCell>
                   <TableCell>Gasto fijo</TableCell>
                   <TableCell align="right">Cuotas</TableCell>
-                  <TableCell align="right">Monto</TableCell>
+                  <TableCell align="right">Cuota mensual</TableCell>
                   <TableCell align="right">Acumulado</TableCell>
                   <TableCell align="right">Saldo restante</TableCell>
                 </TableRow>
@@ -566,7 +604,7 @@ export default function FixedExpensesTab() {
                 <TableCell>Inicio</TableCell>
                   <TableCell align="right">Cuotas</TableCell>
                   <TableCell align="right">Deuda remanente</TableCell>
-                <TableCell align="right">Monto</TableCell>
+                <TableCell align="right">Cuota mensual</TableCell>
                 <TableCell align="right">Acciones</TableCell>
               </TableRow>
             </TableHead>
@@ -584,8 +622,16 @@ export default function FixedExpensesTab() {
                         label={EXPENSE_TYPES.find((t) => t.value === item.expense_type)?.label ?? item.expense_type}
                       />
                     </TableCell>
-                    <TableCell>{parentCategory?.name ?? 'Sin categoría'}</TableCell>
-                    <TableCell>{subcategory?.name ?? '—'}</TableCell>
+                    <TableCell>
+                      <CategoryLabel name={parentCategory?.name} color={parentCategory?.color ?? item.category_color} />
+                    </TableCell>
+                    <TableCell>
+                      <CategoryLabel
+                        name={subcategory?.name}
+                        color={subcategory?.color ?? parentCategory?.color ?? item.category_color}
+                        fallback="—"
+                      />
+                    </TableCell>
                     <TableCell>{item.payment_day ?? '—'}</TableCell>
                     <TableCell>{item.start_date ? formatDate(item.start_date) : '—'}</TableCell>
                     <TableCell align="right">{item.remaining_installments ? `${item.remaining_installments}/${item.total_installments ?? item.remaining_installments}` : '—'}</TableCell>
@@ -593,6 +639,11 @@ export default function FixedExpensesTab() {
                     <TableCell align="right">
                       <Stack spacing={0.25} alignItems="flex-end">
                         <Typography variant="body2" fontWeight={600}>{formatCurrency(item.expected_amount, item.currency)}</Typography>
+                        {!!item.total_installments && (
+                          <Typography variant="caption" color="text.secondary">
+                            Total original: {formatCurrency(toOriginalDebtClp(item))}
+                          </Typography>
+                        )}
                         {item.currency === 'UF' && (
                           <Typography variant="caption" color="text.secondary">
                             {formatCurrency(toClpAmount(item))}
@@ -640,17 +691,57 @@ export default function FixedExpensesTab() {
         <DialogContent>
           <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, pt: 1 }}>
             <TextField label="Nombre" value={form.name ?? ''} onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))} fullWidth />
+            <Box>
+              <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 0.75 }}>
+                Este gasto es
+              </Typography>
+              <ToggleButtonGroup
+                value={paymentPlanMode}
+                exclusive
+                size="small"
+                onChange={(_, value: PaymentPlanMode | null) => {
+                  if (!value) return;
+                  setPaymentPlanMode(value);
+                  setAmountInputMode(value === 'installments' ? amountInputMode : 'monthly');
+                }}
+                fullWidth
+              >
+                <ToggleButton value="recurring">Mensual normal</ToggleButton>
+                <ToggleButton value="installments">Credito o cuotas</ToggleButton>
+              </ToggleButtonGroup>
+            </Box>
+            {usesInstallments && (
+              <Box>
+                <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 0.75 }}>
+                  Estoy ingresando
+                </Typography>
+                <ToggleButtonGroup
+                  value={amountInputMode}
+                  exclusive
+                  size="small"
+                  onChange={(_, value: AmountInputMode | null) => value && setAmountInputMode(value)}
+                  fullWidth
+                >
+                  <ToggleButton value="monthly">Cuota mensual</ToggleButton>
+                  <ToggleButton value="total">Monto total del credito</ToggleButton>
+                </ToggleButtonGroup>
+              </Box>
+            )}
             <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2}>
               <TextField
-                label={`Monto (${effectiveCurrency})`}
+                label={`${usesInstallments && amountInputMode === 'total' ? 'Monto total del credito' : 'Monto mensual'} (${effectiveCurrency})`}
                 type="number"
                 value={form.expected_amount ?? 0}
                 onChange={(e) => setForm((f) => ({ ...f, expected_amount: parseFloat(e.target.value) || 0 }))}
-                helperText={effectiveCurrency === 'UF'
-                  ? (liveUfValue
-                      ? `Equivale aprox. a ${formatCurrency(liveAmountClp)} con UF ${formatCurrency(liveUfValue, 'UF')}`
-                      : 'Cargando UF vigente para calcular equivalente en pesos...')
-                  : `Equivale a ${formatCurrency(liveAmountClp)}`}
+                helperText={usesInstallments && amountInputMode === 'total'
+                  ? (form.total_installments
+                      ? `Cuota mensual estimada: ${formatCurrency(liveMonthlyAmount, effectiveCurrency)} (${formatCurrency(liveAmountClp)})`
+                      : 'Indica las cuotas totales para estimar la cuota mensual.')
+                  : (effectiveCurrency === 'UF'
+                      ? (liveUfValue
+                          ? `Equivale aprox. a ${formatCurrency(liveAmountClp)} con UF ${formatCurrency(liveUfValue, 'UF')}`
+                          : 'Cargando UF vigente para calcular equivalente en pesos...')
+                      : `Equivale a ${formatCurrency(liveInputAmountClp)}`)}
                 fullWidth
               />
               <TextField
@@ -692,56 +783,61 @@ export default function FixedExpensesTab() {
                     expected_amount: convertedAmount,
                   };
                 });
+                if (nextType === 'credito' || nextType === 'dividendo') {
+                  setPaymentPlanMode('installments');
+                }
               }}
               fullWidth
             >
               {EXPENSE_TYPES.map((t) => <MenuItem key={t.value} value={t.value}>{t.label}</MenuItem>)}
             </TextField>
-            <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2}>
-              <TextField
-                label="Cuotas totales"
-                type="number"
-                inputProps={{ min: 1 }}
-                value={form.total_installments ?? ''}
-                onChange={(e) => {
-                  const totalInstallments = parseInstallments(e.target.value, false);
-                  setForm((f) => {
-                    const remainingInstallments = f.remaining_installments;
-                    return {
-                      ...f,
-                      total_installments: totalInstallments,
-                      remaining_installments: totalInstallments && remainingInstallments && remainingInstallments > totalInstallments
-                        ? totalInstallments
-                        : remainingInstallments,
-                    };
-                  });
-                }}
-                helperText={form.total_installments ? (effectiveCurrency === 'UF'
-                  ? `Monto total estimado: ${formatCurrency(liveTotalUf, 'UF')} aprox. ${formatCurrency(liveTotalDebtClp)}`
-                  : `Monto total estimado: ${formatCurrency(liveTotalDebtClp)}`) : 'Opcional para creditos o hipotecarios'}
-                fullWidth
-              />
-              <TextField
-                label="Cuotas pendientes"
-                type="number"
-                inputProps={{ min: 0 }}
-                value={form.remaining_installments ?? ''}
-                onChange={(e) => {
-                  const nextRemaining = parseInstallments(e.target.value, true);
-                  setForm((f) => {
-                    const maxRemaining = f.total_installments;
-                    const normalizedRemaining = maxRemaining && nextRemaining && nextRemaining > maxRemaining
-                      ? maxRemaining
-                      : nextRemaining;
-                    return { ...f, remaining_installments: normalizedRemaining };
-                  });
-                }}
-                helperText={form.remaining_installments ? (effectiveCurrency === 'UF'
-                  ? `Deuda remanente estimada: ${formatCurrency(liveRemainingUf, 'UF')} aprox. ${formatCurrency(liveRemainingDebtClp)}`
-                  : `Deuda remanente estimada: ${formatCurrency(liveRemainingDebtClp)}`) : 'Opcional para creditos o hipotecarios'}
-                fullWidth
-              />
-            </Stack>
+            {usesInstallments && (
+              <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2}>
+                <TextField
+                  label="Cuotas totales"
+                  type="number"
+                  inputProps={{ min: 1 }}
+                  value={form.total_installments ?? ''}
+                  onChange={(e) => {
+                    const totalInstallments = parseInstallments(e.target.value, false);
+                    setForm((f) => {
+                      const remainingInstallments = f.remaining_installments;
+                      return {
+                        ...f,
+                        total_installments: totalInstallments,
+                        remaining_installments: totalInstallments && remainingInstallments && remainingInstallments > totalInstallments
+                          ? totalInstallments
+                          : remainingInstallments,
+                      };
+                    });
+                  }}
+                  helperText={form.total_installments ? (effectiveCurrency === 'UF'
+                    ? `Monto total estimado: ${formatCurrency(liveTotalUf, 'UF')} aprox. ${formatCurrency(liveTotalDebtClp)}`
+                    : `Monto total estimado: ${formatCurrency(liveTotalDebtClp)}`) : 'Necesario si ingresas monto total; útil para seguir la deuda'}
+                  fullWidth
+                />
+                <TextField
+                  label="Cuotas pendientes"
+                  type="number"
+                  inputProps={{ min: 0 }}
+                  value={form.remaining_installments ?? ''}
+                  onChange={(e) => {
+                    const nextRemaining = parseInstallments(e.target.value, true);
+                    setForm((f) => {
+                      const maxRemaining = f.total_installments;
+                      const normalizedRemaining = maxRemaining && nextRemaining && nextRemaining > maxRemaining
+                        ? maxRemaining
+                        : nextRemaining;
+                      return { ...f, remaining_installments: normalizedRemaining };
+                    });
+                  }}
+                  helperText={form.remaining_installments ? (effectiveCurrency === 'UF'
+                    ? `Deuda remanente estimada: ${formatCurrency(liveRemainingUf, 'UF')} aprox. ${formatCurrency(liveRemainingDebtClp)}`
+                    : `Deuda remanente estimada: ${formatCurrency(liveRemainingDebtClp)}`) : 'Opcional si solo quieres registrar la cuota mensual'}
+                  fullWidth
+                />
+              </Stack>
+            )}
             {effectiveCurrency === 'UF' && liveUfValue && (
               <Stack direction="row" spacing={1} alignItems="center" sx={{ mt: -1 }}>
                 <InfoOutlinedIcon sx={{ fontSize: 16, color: 'text.secondary' }} />
@@ -749,6 +845,11 @@ export default function FixedExpensesTab() {
                   Conversión referencial con UF vigente. El valor final guardado en CLP se recalcula con la tasa actual del backend.
                 </Typography>
               </Stack>
+            )}
+            {usesInstallments && amountInputMode === 'total' && (
+              <Alert severity="info">
+                Para creditos como CAE, la app guarda la cuota mensual estimada y solo esa cuota entra al mes, al presupuesto y a la proyección.
+              </Alert>
             )}
             <CategoryAutocomplete
               categories={categories}
@@ -759,7 +860,7 @@ export default function FixedExpensesTab() {
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setDialogOpen(false)}>Cancelar</Button>
-          <Button variant="contained" onClick={handleSave} disabled={!form.name || createMut.isPending || updateMut.isPending}>{editing ? 'Guardar' : 'Crear'}</Button>
+          <Button variant="contained" onClick={handleSave} disabled={!form.name || cannotSaveTotalAmount || createMut.isPending || updateMut.isPending}>{editing ? 'Guardar' : 'Crear'}</Button>
         </DialogActions>
       </Dialog>
 

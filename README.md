@@ -1,17 +1,17 @@
-# Finanzas Personales - Agente Financiero
+# Finanzas Personales
 
-Aplicacion web full stack para administracion de finanzas personales con analisis inteligente.
+Aplicacion web full stack para administrar finanzas personales: cuentas, transacciones, presupuestos, objetivos, proyecciones, importacion de cartolas y sincronizacion bancaria local.
 
 ## Stack
 
 - Backend: FastAPI + SQLModel + SQLite
 - Frontend: React + TypeScript + Vite + MUI
-- IA: motor de reglas + proveedor LLM (mock u OpenAI)
-- Integraciones: importacion Excel/PDF y arquitectura para Fintoc
+- Motor financiero: reglas locales, dashboard y proyecciones
+- Integraciones: importacion Excel/PDF y scrapers bancarios con Playwright
 
 ## Estructura
 
-- backend/: API, modelos, servicios, seeds
+- backend/: API, modelos, servicios, scrapers, seeds y tests
 - frontend/: app React, paginas, componentes y cliente API
 
 ## Requisitos
@@ -50,34 +50,35 @@ cp backend/.env.example backend/.env
 
 - `DATABASE_URL`: por defecto SQLite local
 - `SEED_ON_STARTUP`: `false` para iniciar limpio desde cero, `true` para cargar datos demo
-- `LLM_PROVIDER`: `mock`, `openai` o `ollama`
-- `OPENAI_API_KEY`: requerido si `LLM_PROVIDER=openai`
-- `OLLAMA_BASE_URL` y `OLLAMA_MODEL`: usados si `LLM_PROVIDER=ollama`
-- `FINTOC_SECRET_KEY`: opcional para integracion real
+- `SCRAPER_ENCRYPTION_KEY`: clave Fernet para cifrar credenciales bancarias locales
+- `SCRAPER_HEADLESS`: `false` abre navegador visible, recomendado para bancos con desafio anti-bot
+- `SCRAPER_DEBUG_DIR`: carpeta local para snapshots HTML/PNG cuando falla un scraper
+- `SCRAPER_PROFILES_DIR`: carpeta local para perfiles persistentes de navegador
+- `BANK_AUTO_SYNC_ENABLED`: activa/desactiva sincronizacion bancaria en segundo plano
 
-## Agente real con Ollama (local)
+## Sincronizacion bancaria local
 
-1. Instala Ollama y levanta el servicio:
-
-```bash
-ollama serve
-```
-
-2. Descarga un modelo recomendado:
+Los bancos se conectan mediante scrapers Playwright. Las credenciales se guardan cifradas en la base SQLite local, por eso debes definir `SCRAPER_ENCRYPTION_KEY` antes de crear conexiones bancarias.
 
 ```bash
-ollama pull llama3.1:8b
+cd backend
+python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
 ```
 
-3. En `backend/.env`:
+Luego agrega la clave a `backend/.env`:
 
 ```bash
-LLM_PROVIDER=ollama
-OLLAMA_BASE_URL=http://localhost:11434
-OLLAMA_MODEL=llama3.1:8b
+SCRAPER_ENCRYPTION_KEY=<clave_generada>
 ```
 
-Con esto, el endpoint del agente (`/api/v1/agent/analyze` y `/api/v1/agent/chat`) usa el modelo local.
+BCI puede requerir navegador visible para resolver Cloudflare una vez:
+
+```bash
+SCRAPER_HEADLESS=false
+BANK_AUTO_SYNC_ENABLED=false
+```
+
+Fintoc queda solo como historico legado: las conexiones nuevas se crean con proveedor bancario directo.
 
 ## Resumen mensual consolidado de cartolas
 
@@ -129,5 +130,5 @@ npm run dev
 
 - autenticacion y multiusuario
 - motor de reglas configurable por usuario
-- sincronizacion real bancaria con webhooks
+- robustecer scrapers adicionales con fixtures por banco
 - despliegue en contenedores

@@ -162,7 +162,7 @@ export default function SavingsGoalsTab() {
   return (
     <Box>
       <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 2 }}>
-        <Typography variant="body2" color="text.secondary">Sigue tu progreso hacia tus metas financieras</Typography>
+        <Typography variant="body2" color="text.secondary">Sigue tu progreso y cuánto dinero ya dejaste apartado para cada meta</Typography>
         <Button variant="contained" onClick={openCreate}>Nuevo Objetivo</Button>
       </Box>
 
@@ -180,7 +180,8 @@ export default function SavingsGoalsTab() {
 
       <Grid container spacing={2}>
         {goals.map((goal) => {
-          const pct = goal.target_amount > 0 ? (goal.current_amount / goal.target_amount) * 100 : 0;
+          const available = goal.total_available_amount ?? goal.current_amount;
+          const pct = goal.target_amount > 0 ? (available / goal.target_amount) * 100 : 0;
           return (
             <Grid item xs={12} sm={6} md={4} key={goal.id}>
               <Card elevation={0} sx={{ border: '1px solid', borderColor: 'divider', height: '100%' }}>
@@ -196,12 +197,17 @@ export default function SavingsGoalsTab() {
                     Meta: {formatCurrency(goal.target_amount)}
                   </Typography>
                   <Typography variant="h5" fontWeight={700} color="primary.main" gutterBottom>
-                    {formatCurrency(goal.current_amount)}
+                    {formatCurrency(available)}
                   </Typography>
                   <LinearProgress variant="determinate" value={Math.min(100, pct)} sx={{ height: 8, borderRadius: 8, mb: 1 }} />
                   <Typography variant="caption" color="text.secondary">
-                    {(goal.progress_percent ?? pct).toFixed(1)}% completado
+                    {pct.toFixed(1)}% financiado
                   </Typography>
+                  {(goal.reserved_amount ?? 0) > 0 && (
+                    <Typography variant="caption" display="block" color="warning.main" mt={0.5}>
+                      Reservado desde cuentas: {formatCurrency(goal.reserved_amount)} · falta {formatCurrency(goal.remaining_after_reserved ?? 0)}
+                    </Typography>
+                  )}
                   <Box mt={1} sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
                     <Chip size="small" label={goal.status === 'completed' ? 'Completado' : 'En progreso'} color={goal.status === 'completed' ? 'success' : 'primary'} />
                     {goal.feasibility_status && (

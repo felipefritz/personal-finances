@@ -45,6 +45,7 @@ import PageHeader from '../components/common/PageHeader';
 import LoadingSpinner from '../components/common/LoadingSpinner';
 import ConfirmDialog from '../components/common/ConfirmDialog';
 import CategoryAutocomplete from '../components/common/CategoryAutocomplete';
+import CategoryLabel from '../components/common/CategoryLabel';
 
 const EMPTY_FORM: Partial<Transaction> = {
   date: new Date().toISOString().slice(0, 10),
@@ -62,7 +63,7 @@ const TYPE_COLOR: Record<string, 'success' | 'error' | 'info'> = {
 
 const SOURCE_LABEL: Record<string, string> = {
   manual: 'Manual',
-  fintoc: 'API Fintoc',
+  fintoc: 'Fintoc histórico',
   excel: 'Archivo Excel',
   pdf: 'Archivo PDF',
 };
@@ -480,7 +481,7 @@ export default function TransactionsPage() {
                     </Box>
                   </TableCell>
                   <TableCell>
-                    <Typography variant="body2">{tx.category_name || '—'}</Typography>
+                    <CategoryLabel name={tx.category_name} color={tx.category_color} fallback="—" />
                   </TableCell>
                   <TableCell>
                     <Typography variant="body2">{tx.account_name || '—'}</Typography>

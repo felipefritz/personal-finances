@@ -2,9 +2,10 @@ import { Card, CardContent, Tooltip, Typography } from '@mui/material';
 import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
 import {
   Bar,
-  BarChart,
   CartesianGrid,
   Legend,
+  Line,
+  ComposedChart,
   ResponsiveContainer,
   Tooltip as RechartsTooltip,
   XAxis,
@@ -24,6 +25,8 @@ export default function AnnualChart({ months, year }: { months: MonthlyBalance[]
     'Gtos TC/Variables': m.variable_expenses,
     Cuotas: m.pending_installments,
     'Ahorro sugerido': m.total_suggested_savings,
+    'Disponible día a día': m.available_balance,
+    'Caja final': m.net_balance,
   }));
 
   return (
@@ -31,12 +34,12 @@ export default function AnnualChart({ months, year }: { months: MonthlyBalance[]
       <CardContent>
         <Typography variant="subtitle1" fontWeight={600} gutterBottom>
           Balance mensual {year}
-          <Tooltip title="Las barras grises son meses con datos reales; las coloreadas son proyectados.">
+          <Tooltip title="Disponible día a día es la caja que queda después de ingresos menos gastos y cuotas, antes del ahorro sugerido. Caja final descuenta además el ahorro planificado.">
             <InfoOutlinedIcon sx={{ fontSize: 16, ml: 0.5, verticalAlign: 'middle', color: 'text.secondary' }} />
           </Tooltip>
         </Typography>
         <ResponsiveContainer width="100%" height={320}>
-          <BarChart data={chartData} margin={{ top: 4, right: 8, bottom: 0, left: 8 }}>
+          <ComposedChart data={chartData} margin={{ top: 8, right: 16, bottom: 0, left: 8 }}>
             <CartesianGrid strokeDasharray="3 3" />
             <XAxis dataKey="name" />
             <YAxis tickFormatter={(v) => `$${(v / 1_000_000).toFixed(1)}M`} />
@@ -49,7 +52,23 @@ export default function AnnualChart({ months, year }: { months: MonthlyBalance[]
             <Bar dataKey="Gtos TC/Variables" stackId="expenses" fill="#6d4c41" />
             <Bar dataKey="Cuotas" stackId="expenses" fill="#f57c00" />
             <Bar dataKey="Ahorro sugerido" stackId="savings" fill="#1976d2" />
-          </BarChart>
+            <Line
+              type="monotone"
+              dataKey="Disponible día a día"
+              stroke="#00acc1"
+              strokeWidth={3}
+              dot={{ r: 3 }}
+              activeDot={{ r: 5 }}
+            />
+            <Line
+              type="monotone"
+              dataKey="Caja final"
+              stroke="#7e57c2"
+              strokeWidth={2}
+              strokeDasharray="5 5"
+              dot={false}
+            />
+          </ComposedChart>
         </ResponsiveContainer>
       </CardContent>
     </Card>

@@ -12,11 +12,21 @@ from app.schemas.recurring_income import RecurringIncomeCreate, RecurringIncomeR
 router = APIRouter(prefix="/recurring-incomes", tags=["Recurring Incomes"])
 
 
+def _category_color(cat: Category | None, session: Session) -> str | None:
+    if not cat:
+        return None
+    if cat.color:
+        return cat.color
+    parent = session.get(Category, cat.parent_id) if cat.parent_id else None
+    return parent.color if parent else None
+
+
 def _enrich(ri: RecurringIncome, session: Session) -> RecurringIncomeRead:
     cat = session.get(Category, ri.category_id) if ri.category_id else None
     acc = session.get(Account, ri.account_id) if ri.account_id else None
     data = ri.model_dump()
     data["category_name"] = cat.name if cat else None
+    data["category_color"] = _category_color(cat, session)
     data["account_name"] = acc.name if acc else None
     return RecurringIncomeRead(**data)
 

@@ -20,6 +20,15 @@ from app.services.currency_service import convert_amount, get_rates_clp
 router = APIRouter(prefix="/transactions", tags=["Transactions"])
 
 
+def _category_color(cat: Optional[Category], session: Session) -> Optional[str]:
+    if not cat:
+        return None
+    if cat.color:
+        return cat.color
+    parent = session.get(Category, cat.parent_id) if cat.parent_id else None
+    return parent.color if parent else None
+
+
 def _normalize_transaction_payload(payload: dict) -> dict:
     normalized = dict(payload)
     amount = normalized.get("amount")
@@ -44,6 +53,7 @@ def _enrich(t: Transaction, session: Session) -> TransactionRead:
     acc = session.get(Account, t.account_id) if t.account_id else None
     data = t.model_dump()
     data["category_name"] = cat.name if cat else None
+    data["category_color"] = _category_color(cat, session)
     data["account_name"] = acc.name if acc else None
 
     # For international transactions, ensure local_amount (CLP) is populated.

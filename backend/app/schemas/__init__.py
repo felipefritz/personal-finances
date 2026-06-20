@@ -12,6 +12,7 @@ from app.schemas.savings_goal import SavingsGoalCreate, SavingsGoalUpdate, Savin
 from app.schemas.budget import BudgetCreate, BudgetUpdate, BudgetRead
 from app.schemas.import_file import ImportFileRead, ImportPreviewResponse, ImportConfirmRequest
 from app.schemas.bank_connection import BankConnectionCreate, BankConnectionRead
+from app.schemas.money_allocation import MoneyAllocationCreate, MoneyAllocationUpdate, MoneyAllocationRead
 
 __all__ = [
     "AccountCreate", "AccountUpdate", "AccountRead",
@@ -23,4 +24,5 @@ __all__ = [
     "BudgetCreate", "BudgetUpdate", "BudgetRead",
     "ImportFileRead", "ImportPreviewResponse", "ImportConfirmRequest",
     "BankConnectionCreate", "BankConnectionRead",
+    "MoneyAllocationCreate", "MoneyAllocationUpdate", "MoneyAllocationRead",
 ]

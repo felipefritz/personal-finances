@@ -41,6 +41,7 @@ import LoadingSpinner from '../components/common/LoadingSpinner';
 import ConfirmDialog from '../components/common/ConfirmDialog';
 
 const COLORS = ['#1976d2', '#9c27b0', '#2e7d32', '#ed6c02', '#d32f2f', '#0288d1', '#7b1fa2', '#00695c'];
+const DEFAULT_COLOR = COLORS[0];
 
 export default function CategoriesPage() {
   const qc = useQueryClient();
@@ -84,13 +85,13 @@ export default function CategoriesPage() {
   const openCreate = (pid: number | null = null) => {
     setEditing(null);
     setParentId(pid);
-    setForm({ name: '', color: COLORS[0], icon: '' });
+    setForm({ name: '', color: DEFAULT_COLOR, icon: '' });
     setDialogOpen(true);
   };
   const openEdit = (cat: Category) => {
     setEditing(cat);
     setParentId(cat.parent_id ?? null);
-    setForm({ name: cat.name, color: cat.color ?? '#1976d2', icon: cat.icon ?? '' });
+    setForm({ name: cat.name, color: cat.color ?? DEFAULT_COLOR, icon: cat.icon ?? '' });
     setDialogOpen(true);
   };
   const handleSave = () => {
@@ -225,7 +226,28 @@ export default function CategoriesPage() {
               onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
             />
             <Box>
-              <Typography variant="caption" color="text.secondary" gutterBottom>Color</Typography>
+              <Typography variant="caption" color="text.secondary" gutterBottom>Color de categoría</Typography>
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, mt: 0.75, mb: 1.5 }}>
+                <Box
+                  sx={{
+                    width: 34,
+                    height: 34,
+                    borderRadius: '50%',
+                    bgcolor: form.color || DEFAULT_COLOR,
+                    border: '1px solid',
+                    borderColor: 'divider',
+                  }}
+                />
+                <TextField
+                  type="color"
+                  size="small"
+                  value={form.color || DEFAULT_COLOR}
+                  onChange={(e) => setForm((f) => ({ ...f, color: e.target.value }))}
+                  sx={{ width: 74 }}
+                  inputProps={{ 'aria-label': 'Color de categoría' }}
+                />
+                <Typography variant="body2" color="text.secondary">{form.color || DEFAULT_COLOR}</Typography>
+              </Box>
               <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1, mt: 0.5 }}>
                 {COLORS.map((c) => (
                   <Box

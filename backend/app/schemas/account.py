@@ -1,6 +1,8 @@
 from typing import Optional
 from datetime import datetime
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
+
+from app.core.text_normalization import normalize_sentence_text, normalize_title_text
 
 
 class AccountBase(BaseModel):
@@ -14,6 +16,16 @@ class AccountBase(BaseModel):
     notes: Optional[str] = None
     card_last_four: Optional[str] = None
     card_network: Optional[str] = None
+
+    @field_validator("name", "bank", mode="before")
+    @classmethod
+    def normalize_title_fields(cls, value):
+        return normalize_title_text(value)
+
+    @field_validator("notes", mode="before")
+    @classmethod
+    def normalize_notes(cls, value):
+        return normalize_sentence_text(value)
 
 
 class AccountCreate(AccountBase):
@@ -32,6 +44,16 @@ class AccountUpdate(BaseModel):
     card_last_four: Optional[str] = None
     card_network: Optional[str] = None
 
+    @field_validator("name", "bank", mode="before")
+    @classmethod
+    def normalize_title_fields(cls, value):
+        return normalize_title_text(value)
+
+    @field_validator("notes", mode="before")
+    @classmethod
+    def normalize_notes(cls, value):
+        return normalize_sentence_text(value)
+
 
 class AccountRead(AccountBase):
     id: int
@@ -45,5 +67,9 @@ class AccountRead(AccountBase):
     available_credit: Optional[float] = None
     # For tarjeta_credito: extra reserved credit for unfactured 0/N installments
     future_installments_commitment: Optional[float] = None
+    # For non-credit accounts: money internally reserved for budgets/goals.
+    reserved_amount: float = 0.0
+    # For non-credit accounts: balance minus active reservations.
+    free_balance: Optional[float] = None
 
     model_config = {"from_attributes": True}

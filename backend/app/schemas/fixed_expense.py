@@ -1,8 +1,10 @@
-from typing import Optional
+from typing import Literal, Optional
 from datetime import date, datetime
 from pydantic import BaseModel
 from pydantic import Field
 from pydantic import field_validator
+
+from app.core.text_normalization import normalize_title_text
 
 
 class FixedExpenseBase(BaseModel):
@@ -18,6 +20,11 @@ class FixedExpenseBase(BaseModel):
     total_installments: Optional[int] = None
     remaining_installments: Optional[int] = None
 
+    @field_validator("name", mode="before")
+    @classmethod
+    def normalize_name(cls, value):
+        return normalize_title_text(value)
+
     @field_validator("currency", mode="before")
     @classmethod
     def normalize_currency(cls, value: Optional[str]) -> str:
@@ -28,7 +35,7 @@ class FixedExpenseBase(BaseModel):
 
 
 class FixedExpenseCreate(FixedExpenseBase):
-    pass
+    amount_mode: Literal["monthly", "total"] = "monthly"
 
 
 class FixedExpenseUpdate(BaseModel):
@@ -42,13 +49,21 @@ class FixedExpenseUpdate(BaseModel):
     expense_type: Optional[str] = None
     total_installments: Optional[int] = None
     remaining_installments: Optional[int] = None
+    amount_mode: Optional[Literal["monthly", "total"]] = None
+
+    @field_validator("name", mode="before")
+    @classmethod
+    def normalize_name(cls, value):
+        return normalize_title_text(value)
 
 
 class FixedExpenseRead(FixedExpenseBase):
     id: int
     category_name: Optional[str] = None
+    category_color: Optional[str] = None
     account_name: Optional[str] = None
     expected_amount_clp: Optional[float] = None
+    total_debt_clp: Optional[float] = None
     remaining_debt_clp: Optional[float] = None
     created_at: datetime
     updated_at: datetime

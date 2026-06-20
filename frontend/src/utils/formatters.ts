@@ -46,9 +46,9 @@ export const getMonthName = (month: number): string => MONTH_NAMES[month - 1] ??
 export const ACCOUNT_TYPES = [
   { value: 'corriente', label: 'Cuenta Corriente' },
   { value: 'vista', label: 'Cuenta Vista' },
-  { value: 'ahorro', label: 'Cuenta Ahorro' },
-  { value: 'tarjeta_credito', label: 'Tarjeta de Credito' },
-  { value: 'inversion', label: 'Cuenta Inversion' },
+  { value: 'ahorro', label: 'Cuenta de Ahorro' },
+  { value: 'tarjeta_credito', label: 'Tarjeta de Crédito' },
+  { value: 'inversion', label: 'Cuenta de Inversión' },
   { value: 'efectivo', label: 'Efectivo' },
 ] as const;
 
@@ -70,7 +70,7 @@ export const TRANSACTION_TYPES = [
 
 export const SOURCES = [
   { value: 'manual', label: 'Manual' },
-  { value: 'fintoc', label: 'Fintoc' },
+  { value: 'fintoc', label: 'Fintoc histórico' },
   { value: 'excel', label: 'Excel' },
   { value: 'pdf', label: 'PDF' },
 ] as const;

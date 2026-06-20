@@ -13,12 +13,12 @@ import type {
 export const getAnnualProjection = async (
   year?: number,
   accountId?: number,
-  includeFintocInternalTransfers = false,
+  includeInternalTransfers = false,
 ): Promise<AnnualProjection> => {
   const params: Record<string, number | boolean> = {};
   if (year) params.year = year;
   if (accountId) params.account_id = accountId;
-  params.include_fintoc_internal_transfers = includeFintocInternalTransfers;
+  params.include_internal_transfers = includeInternalTransfers;
   const { data } = await apiClient.get('/projections/annual', { params });
   return data;
 };
@@ -34,13 +34,13 @@ export const getBudgetRules = async (
   accountId?: number,
   year?: number,
   month?: number,
-  includeFintocInternalTransfers = false,
+  includeInternalTransfers = false,
 ): Promise<BudgetRules> => {
   const params: Record<string, number | boolean> = {};
   if (accountId) params.account_id = accountId;
   if (year) params.year = year;
   if (month) params.month = month;
-  params.include_fintoc_internal_transfers = includeFintocInternalTransfers;
+  params.include_internal_transfers = includeInternalTransfers;
   const { data } = await apiClient.get('/projections/budget-rules', { params });
   return data;
 };
@@ -48,9 +48,9 @@ export const getBudgetRules = async (
 export const getMonthBreakdown = async (
   year: number,
   month: number,
-  includeFintocInternalTransfers = false,
+  includeInternalTransfers = false,
 ): Promise<MonthBreakdown> => {
-  const params: Record<string, number | boolean> = { year, month, include_fintoc_internal_transfers: includeFintocInternalTransfers };
+  const params: Record<string, number | boolean> = { year, month, include_internal_transfers: includeInternalTransfers };
   const { data } = await apiClient.get('/projections/month-breakdown', { params });
   return data;
 };

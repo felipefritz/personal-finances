@@ -7,6 +7,7 @@ class Budget(SQLModel, table=True):
     __tablename__ = "budgets"
 
     id: Optional[int] = Field(default=None, primary_key=True)
+    user_id: Optional[int] = Field(default=None, foreign_key="users.id", index=True)
     month: int  # 1-12
     year: int
     category_id: int = Field(foreign_key="categories.id")

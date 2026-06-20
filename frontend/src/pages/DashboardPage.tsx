@@ -37,13 +37,13 @@ import {
 import AccountBalanceWalletIcon from '@mui/icons-material/AccountBalanceWallet';
 import TrendingUpIcon from '@mui/icons-material/TrendingUp';
 import TrendingDownIcon from '@mui/icons-material/TrendingDown';
-import SavingsIcon from '@mui/icons-material/Savings';
 import CreditCardIcon from '@mui/icons-material/CreditCard';
 import MonetizationOnIcon from '@mui/icons-material/MonetizationOn';
 import HealthAndSafetyIcon from '@mui/icons-material/HealthAndSafety';
 import { getDashboardSummary } from '../api/dashboard';
 import { ACCOUNT_TYPES, formatCurrency, formatPercent, MONTH_NAMES } from '../utils/formatters';
 import LoadingSpinner from '../components/common/LoadingSpinner';
+import CategoryLabel from '../components/common/CategoryLabel';
 
 const CHART_COLORS = ['#6366f1', '#2dd4bf', '#f59e0b', '#f43f5e', '#06b6d4', '#a78bfa', '#34d399', '#fb923c'];
 
@@ -102,7 +102,7 @@ function HealthScoreCard({ score, status, breakdown }: { score: number; status: 
     <Card sx={{ height: '100%' }}>
       <CardContent sx={{ p: 2.5 }}>
         <Stack direction="row" justifyContent="space-between" alignItems="center" mb={2}>
-          <Typography variant="subtitle1" fontWeight={700}>Health Score</Typography>
+          <Typography variant="subtitle1" fontWeight={700}>Estado financiero</Typography>
           <Chip label={statusLabel} size="small" sx={{ bgcolor: color + '22', color, fontWeight: 700, border: `1px solid ${color}44` }} />
         </Stack>
         <Stack direction="row" alignItems="center" spacing={3} mb={2}>
@@ -174,29 +174,15 @@ export default function DashboardPage() {
     Gastos: Math.abs(t.expenses),
   }));
 
-  const assetCompositionData = [
-    {
-      name: 'Liquidez operativa',
-      value: Math.max((data.liquid_assets ?? 0) - (data.savings_assets ?? 0), 0),
-      color: '#1976d2',
-    },
-    {
-      name: 'Ahorro en cuentas',
-      value: Math.max(data.savings_assets ?? 0, 0),
-      color: '#2e7d32',
-    },
-    {
-      name: 'Inversiones',
-      value: Math.max(data.investment_assets ?? 0, 0),
-      color: '#ed6c02',
-    },
-  ].filter((item) => item.value > 0);
-
-  const totalTrackedAssets = assetCompositionData.reduce((sum, item) => sum + item.value, 0);
+  const monthLabel = `${MONTH_NAMES[month - 1]} ${year}`;
+  const effectiveSavings = data.effective_savings ?? data.savings;
+  const effectiveSavingsPercent = data.effective_savings_percent ?? data.savings_percent;
+  const creditCardDebt = data.credit_card_used_amount ?? data.short_term_debt ?? 0;
+  const accountCardDebt = (account: (typeof data.accounts)[number]) => (
+    Math.abs(Math.min(account.computed_balance ?? 0, 0))
+  );
   const accountDisplayAmount = (account: (typeof data.accounts)[number]) => (
-    account.account_type === 'tarjeta_credito'
-      ? (account.available_credit ?? account.balance)
-      : account.balance
+    account.account_type === 'tarjeta_credito' ? accountCardDebt(account) : account.balance
   );
   const accountsSorted = [...data.accounts].sort(
     (left, right) => Math.abs(accountDisplayAmount(right)) - Math.abs(accountDisplayAmount(left)),
@@ -210,9 +196,14 @@ export default function DashboardPage() {
     <Box>
       {/* Header */}
       <Stack direction="row" spacing={2} alignItems="center" mb={3} flexWrap="wrap" gap={1}>
-        <Typography variant="h5" fontWeight={700} flexGrow={1}>
-          Dashboard
-        </Typography>
+        <Box flexGrow={1} minWidth={220}>
+          <Typography variant="h5" fontWeight={700}>
+            Resumen mensual
+          </Typography>
+          <Typography variant="body2" color="text.secondary">
+            {monthLabel}: dinero disponible, gastos, deuda y ahorro esperado.
+          </Typography>
+        </Box>
         <FormControl size="small" sx={{ minWidth: 130 }}>
           <InputLabel>Mes</InputLabel>
           <Select value={month} label="Mes" onChange={(e) => setMonth(Number(e.target.value))}>
@@ -229,103 +220,59 @@ export default function DashboardPage() {
         </FormControl>
       </Stack>
 
-      {/* Fila 1: Health Score + KPIs de posición */}
+      {/* Foto principal del mes */}
       <Grid container spacing={2} mb={2}>
-        <Grid item xs={12} md={4}>
+        <Grid item xs={12} md={3}>
           <HealthScoreCard
             score={data.financial_health_score ?? 0}
             status={data.financial_health_status ?? 'watch'}
             breakdown={data.financial_health_breakdown}
           />
         </Grid>
-        <Grid item xs={12} md={8}>
+        <Grid item xs={12} md={9}>
           <Grid container spacing={2} height="100%">
-            <Grid item xs={6} sm={3} md={3}>
+            <Grid item xs={12} sm={6} md={3}>
               <KpiCard
-                title="Patrimonio Neto"
-                value={formatCurrency(data.net_worth ?? data.total_balance)}
-                subtitle="Activos − deuda CP"
-                icon={<AccountBalanceWalletIcon sx={{ fontSize: 22 }} />}
-                iconBg="#6366f122"
-              />
-            </Grid>
-            <Grid item xs={6} sm={3} md={3}>
-              <KpiCard
-                title="Liquidez"
+                title="Dinero disponible"
                 value={formatCurrency(data.liquid_assets ?? data.total_balance)}
-                subtitle="Cuentas corrientes y ahorro"
+                subtitle="Cuentas, ahorro y efectivo"
+                icon={<AccountBalanceWalletIcon sx={{ fontSize: 22 }} />}
+                iconBg="#0ea5e922"
+              />
+            </Grid>
+            <Grid item xs={12} sm={6} md={3}>
+              <KpiCard
+                title="Resultado del mes"
+                value={formatCurrency(effectiveSavings)}
+                subtitle={`${formatPercent(effectiveSavingsPercent)} del ingreso`}
+                icon={effectiveSavings >= 0 ? <TrendingUpIcon sx={{ fontSize: 22 }} /> : <TrendingDownIcon sx={{ fontSize: 22 }} />}
+                iconBg={effectiveSavings >= 0 ? '#22c55e22' : '#f43f5e22'}
+                trend={{ value: effectiveSavings >= 0 ? 'Queda caja' : 'Falta caja', positive: effectiveSavings >= 0 }}
+              />
+            </Grid>
+            <Grid item xs={12} sm={6} md={3}>
+              <KpiCard
+                title="Deuda en tarjetas"
+                value={formatCurrency(creditCardDebt)}
+                subtitle={`Cupo disponible ${formatCurrency(data.credit_card_available_amount ?? 0)}`}
+                icon={<CreditCardIcon sx={{ fontSize: 22 }} />}
+                iconBg={creditCardDebt > 0 ? '#f43f5e22' : '#22c55e22'}
+              />
+            </Grid>
+            <Grid item xs={12} sm={6} md={3}>
+              <KpiCard
+                title="Gasto mensual esperado"
+                value={formatCurrency(data.projected_month_expenses ?? data.expenses)}
+                subtitle={`Ingresos ${formatCurrency(data.income)}`}
                 icon={<MonetizationOnIcon sx={{ fontSize: 22 }} />}
-                iconBg="#2dd4bf22"
-              />
-            </Grid>
-            <Grid item xs={6} sm={3} md={3}>
-              <KpiCard
-                title="Inversiones"
-                value={formatCurrency(data.investment_assets ?? 0)}
-                subtitle="Capital invertido"
-                icon={<TrendingUpIcon sx={{ fontSize: 22 }} />}
-                iconBg="#22c55e22"
-              />
-            </Grid>
-            <Grid item xs={6} sm={3} md={3}>
-              <KpiCard
-                title="Deuda Total"
-                value={formatCurrency(data.total_debt_exposure ?? 0)}
-                subtitle="Tarjetas + cuotas fijas"
-                icon={<CreditCardIcon sx={{ fontSize: 22 }} />}
-                iconBg="#f43f5e22"
-                trend={(data.total_debt_exposure ?? 0) > 0 ? undefined : undefined}
-              />
-            </Grid>
-            <Grid item xs={6} sm={3} md={3}>
-              <KpiCard
-                title="Cupo TC Disponible"
-                value={formatCurrency(data.credit_card_available_amount ?? 0)}
-                subtitle="Disponible en tarjetas"
-                icon={<CreditCardIcon sx={{ fontSize: 22 }} />}
-                iconBg="#22c55e22"
-              />
-            </Grid>
-            <Grid item xs={6} sm={3} md={3}>
-              <KpiCard
-                title="Cupo TC Total"
-                value={formatCurrency(data.credit_card_total_limit ?? 0)}
-                subtitle="Limite total tarjetas"
-                icon={<CreditCardIcon sx={{ fontSize: 22 }} />}
-                iconBg="#6366f122"
-              />
-            </Grid>
-            <Grid item xs={6} sm={4} md={4}>
-              <KpiCard
-                title="Ingresos del Mes"
-                value={formatCurrency(data.income)}
-                icon={<TrendingUpIcon sx={{ fontSize: 22 }} />}
-                iconBg="#22c55e22"
-              />
-            </Grid>
-            <Grid item xs={6} sm={4} md={4}>
-              <KpiCard
-                title="Gastos del Mes"
-                value={formatCurrency(data.expenses)}
-                icon={<TrendingDownIcon sx={{ fontSize: 22 }} />}
                 iconBg="#f59e0b22"
-              />
-            </Grid>
-            <Grid item xs={12} sm={4} md={4}>
-              <KpiCard
-                title="Tasa de Ahorro"
-                value={formatPercent(data.savings_percent)}
-                subtitle={formatCurrency(data.savings)}
-                icon={<SavingsIcon sx={{ fontSize: 22 }} />}
-                iconBg="#a78bfa22"
-                trend={{ value: `${data.savings_percent >= 20 ? 'Meta 20%' : 'Bajo meta'}`, positive: data.savings_percent >= 20 }}
               />
             </Grid>
           </Grid>
         </Grid>
       </Grid>
 
-      {/* Insights */}
+      {/* Recomendaciones */}
       {(data.dashboard_insights?.length ?? 0) > 0 && (
         <Grid container spacing={2} mb={2}>
           <Grid item xs={12}>
@@ -333,7 +280,7 @@ export default function DashboardPage() {
               <CardContent sx={{ p: 2.5 }}>
                 <Stack direction="row" alignItems="center" spacing={1} mb={1.5}>
                   <HealthAndSafetyIcon sx={{ color: 'primary.main', fontSize: 20 }} />
-                  <Typography variant="subtitle1" fontWeight={700}>Insights</Typography>
+                  <Typography variant="subtitle1" fontWeight={700}>Recomendaciones del mes</Typography>
                 </Stack>
                 <Grid container spacing={1.5}>
                   {(data.dashboard_insights ?? []).map((insight, index) => {
@@ -370,34 +317,44 @@ export default function DashboardPage() {
         <Grid item xs={12} md={4}>
           <Card sx={{ height: '100%' }}>
             <CardContent sx={{ p: 2.5 }}>
-              <Typography variant="subtitle1" fontWeight={700} mb={1.5}>Cuentas</Typography>
+              <Typography variant="subtitle1" fontWeight={700} mb={1.5}>Cuentas y tarjetas</Typography>
               <List dense disablePadding>
-                {accountsSorted.map((account, index) => (
-                  <div key={account.id}>
-                    <ListItem disablePadding sx={{ py: 0.75 }}>
-                      <ListItemText
-                        primary={<Typography variant="body2" fontWeight={500}>{account.name}</Typography>}
-                        secondary={(
-                          <Typography variant="caption" color="text.disabled">
-                            {getAccountTypeLabel(account.account_type)}
-                            {account.account_type === 'tarjeta_credito' && (
-                              <> · Cupo total {formatCurrency(account.credit_limit ?? account.balance, account.currency)}</>
-                            )}
+                {accountsSorted.map((account, index) => {
+                  const isCreditCard = account.account_type === 'tarjeta_credito';
+                  const debt = accountCardDebt(account);
+                  const availableCredit = account.available_credit ?? Math.max((account.credit_limit ?? 0) - debt, 0);
+                  const primaryAmount = isCreditCard ? debt : account.balance;
+                  return (
+                    <div key={account.id}>
+                      <ListItem disablePadding sx={{ py: 0.75, alignItems: 'flex-start' }}>
+                        <ListItemText
+                          primary={<Typography variant="body2" fontWeight={500}>{account.name}</Typography>}
+                          secondary={(
+                            <Typography variant="caption" color="text.disabled">
+                              {getAccountTypeLabel(account.account_type)}
+                              {isCreditCard && (
+                                <> · Cupo disponible {formatCurrency(availableCredit, account.currency)}</>
+                              )}
+                            </Typography>
+                          )}
+                        />
+                        <Box textAlign="right" ml={1} flexShrink={0}>
+                          <Typography
+                            variant="body2"
+                            fontWeight={800}
+                            color={isCreditCard ? (debt > 0 ? 'error.main' : 'success.main') : (account.balance < 0 ? 'error.main' : 'text.primary')}
+                          >
+                            {formatCurrency(primaryAmount, account.currency)}
                           </Typography>
-                        )}
-                      />
-                      <Typography
-                        variant="body2"
-                        fontWeight={700}
-                        ml={1}
-                        color={account.account_type === 'tarjeta_credito' ? 'success.main' : (account.balance < 0 ? 'error.main' : 'text.primary')}
-                      >
-                        {formatCurrency(accountDisplayAmount(account), account.currency)}
-                      </Typography>
-                    </ListItem>
-                    {index < accountsSorted.length - 1 && <Divider />}
-                  </div>
-                ))}
+                          <Typography variant="caption" color="text.disabled">
+                            {isCreditCard ? 'deuda usada' : 'saldo'}
+                          </Typography>
+                        </Box>
+                      </ListItem>
+                      {index < accountsSorted.length - 1 && <Divider />}
+                    </div>
+                  );
+                })}
                 {accountsSorted.length === 0 && (
                   <Typography color="text.secondary" textAlign="center" py={3} variant="body2">Sin cuentas activas</Typography>
                 )}
@@ -410,7 +367,7 @@ export default function DashboardPage() {
         <Grid item xs={12} md={8}>
           <Card sx={{ height: '100%' }}>
             <CardContent sx={{ p: 2.5 }}>
-              <Typography variant="subtitle1" fontWeight={700} mb={2}>Tendencia Mensual</Typography>
+              <Typography variant="subtitle1" fontWeight={700} mb={2}>Ingresos vs gastos</Typography>
               <ResponsiveContainer width="100%" height={240}>
                 <BarChart data={barData} margin={{ top: 5, right: 10, left: 10, bottom: 5 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke={isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.06)'} />
@@ -432,7 +389,7 @@ export default function DashboardPage() {
         <Grid item xs={12} md={5}>
           <Card sx={{ height: '100%' }}>
             <CardContent sx={{ p: 2.5 }}>
-              <Typography variant="subtitle1" fontWeight={700} mb={1}>Gastos por Categoría</Typography>
+              <Typography variant="subtitle1" fontWeight={700} mb={1}>Gastos por categoría</Typography>
               {pieData.length === 0 ? (
                 <Typography color="text.secondary" textAlign="center" py={4} variant="body2">Sin datos</Typography>
               ) : (
@@ -468,7 +425,7 @@ export default function DashboardPage() {
             <Grid item xs={12}>
               <Card>
                 <CardContent sx={{ p: 2.5 }}>
-                  <Typography variant="subtitle1" fontWeight={700} mb={1.5}>Objetivos de Ahorro</Typography>
+                  <Typography variant="subtitle1" fontWeight={700} mb={1.5}>Objetivos de ahorro</Typography>
                   {data.savings_goals.length === 0 ? (
                     <Typography color="text.secondary" textAlign="center" py={2} variant="body2">Sin objetivos configurados</Typography>
                   ) : (
@@ -507,7 +464,7 @@ export default function DashboardPage() {
             <Grid item xs={12}>
               <Card>
                 <CardContent sx={{ p: 2.5 }}>
-                  <Typography variant="subtitle1" fontWeight={700} mb={1}>Top Gastos del Mes</Typography>
+                  <Typography variant="subtitle1" fontWeight={700} mb={1}>Mayores gastos del mes</Typography>
                   <List dense disablePadding>
                     {data.top_expenses.slice(0, 6).map((tx, i) => (
                       <div key={tx.id}>
@@ -515,7 +472,7 @@ export default function DashboardPage() {
                           <Typography variant="caption" color="text.disabled" sx={{ mr: 1, minWidth: 16 }}>{i + 1}</Typography>
                           <ListItemText
                             primary={<Typography variant="body2" noWrap maxWidth={200}>{tx.description}</Typography>}
-                            secondary={<Typography variant="caption" color="text.disabled">{tx.category_name}</Typography>}
+                            secondary={<CategoryLabel name={tx.category_name} color={tx.category_color} size="small" fontWeight={400} />}
                           />
                           <Typography variant="body2" fontWeight={700} color="error.main" ml={1} flexShrink={0}>
                             {formatCurrency(Math.abs(tx.amount))}
@@ -539,7 +496,7 @@ export default function DashboardPage() {
             <Card>
               <CardContent sx={{ p: 2.5 }}>
                 <Stack direction="row" justifyContent="space-between" alignItems="center" mb={2}>
-                  <Typography variant="subtitle1" fontWeight={700}>Flujo de Caja Proyectado</Typography>
+                  <Typography variant="subtitle1" fontWeight={700}>Flujo de caja proyectado</Typography>
                   {next30 && next30.projected_net_balance < 0 && (
                     <Chip size="small" color="warning" label="Presión en próximos 30 días" />
                   )}

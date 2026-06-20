@@ -6,6 +6,7 @@ from sqlmodel import Session, select
 from app.core.database import get_session
 from app.models.account import Account
 from app.schemas.account import AccountCreate, AccountRead, AccountUpdate
+from app.services.allocation_service import reserved_by_account
 from app.services.credit_card_service import compute_credit_card_metrics
 
 router = APIRouter(prefix="/accounts", tags=["Accounts"])
@@ -13,6 +14,7 @@ router = APIRouter(prefix="/accounts", tags=["Accounts"])
 
 def _enrich_account(account: Account, session: Session) -> AccountRead:
     data = account.model_dump()
+    reserved = reserved_by_account(session).get(account.id or 0, 0.0)
     if account.account_type == "tarjeta_credito":
         metrics = compute_credit_card_metrics(session, account.id)
         computed_balance = float(metrics.get("computed_balance") or 0.0)
@@ -22,6 +24,11 @@ def _enrich_account(account: Account, session: Session) -> AccountRead:
         data["credit_limit"] = credit_limit
         data["available_credit"] = float(statement_available) if statement_available is not None else (credit_limit + computed_balance)
         data["future_installments_commitment"] = float(metrics.get("future_installments_commitment") or 0.0)
+        data["reserved_amount"] = 0.0
+        data["free_balance"] = None
+    else:
+        data["reserved_amount"] = reserved
+        data["free_balance"] = round(float(account.balance or 0) - reserved, 2)
     return AccountRead(**data)
 
 

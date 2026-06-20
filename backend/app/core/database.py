@@ -6,10 +6,12 @@ migration is guarded by a column-existence check, so running it multiple times
 is safe (idempotent).
 """
 from sqlalchemy import text
-from sqlmodel import SQLModel, create_engine, Session
+from sqlmodel import SQLModel, create_engine, Session, select
 
 from app.core.config import settings
+from app.core.security import hash_password
 from app.models.fixed_expense import FixedExpense
+from app.models.user import User
 from app.services.currency_service import get_market_reference_rates
 
 
@@ -44,8 +46,13 @@ def create_db_and_tables() -> None:
             _migrate_categories_indexes(conn)
             _migrate_fixed_expenses_table(conn)
             _migrate_budgets_table(conn)
+            _migrate_recurring_incomes_table(conn)
+            _migrate_bank_connections_table(conn)
+            _migrate_user_ownership_columns(conn)
             _drop_removed_tables(conn)
 
+        _ensure_local_default_user()
+        _backfill_existing_rows_to_default_user()
         _backfill_mortgage_currency_to_uf()
 
 
@@ -157,15 +164,101 @@ def _migrate_budgets_table(conn) -> None:
     })
 
 
+def _migrate_recurring_incomes_table(conn) -> None:
+    """Add application tracking for recurring income auto-posting."""
+    _add_missing_columns(conn, "recurring_incomes", {
+        "last_applied_date": "DATE",
+    })
+
+
+def _migrate_bank_connections_table(conn) -> None:
+    """Add scraper columns and retire legacy Fintoc connections.
+
+    The old ``access_token`` column stays orphaned in SQLite (harmless: it is
+    no longer in the model). Legacy Fintoc rows flip to ``disconnected`` but
+    keep their metadata (linked_accounts) as reference; transactions with
+    source="fintoc" are untouched — content-based dedupe prevents duplicating
+    that history when the same accounts reconnect via scraping.
+    """
+    _add_missing_columns(conn, "bank_connections", {
+        "encrypted_credentials": "TEXT",
+        "last_error":            "TEXT",
+        "last_error_at":         "DATETIME",
+    })
+    conn.execute(text(
+        "UPDATE bank_connections SET status = 'disconnected' WHERE provider = 'fintoc'"
+    ))
+
+
+def _migrate_user_ownership_columns(conn) -> None:
+    """Add user ownership columns to financial tables for mobile/multi-user mode."""
+    for table in (
+        "accounts",
+        "bank_connections",
+        "budgets",
+        "categories",
+        "fixed_expenses",
+        "import_files",
+        "money_allocations",
+        "recurring_incomes",
+        "savings_goals",
+        "transactions",
+    ):
+        _add_missing_columns(conn, table, {"user_id": "INTEGER"})
+        conn.execute(text(f"CREATE INDEX IF NOT EXISTS idx_{table}_user_id ON {table}(user_id)"))
+
+
 def _drop_removed_tables(conn) -> None:
     """Drop tables for features removed from the app (only demo/derived data)."""
-    for table in ("notifications", "users", "family_accounts"):
+    for table in ("notifications", "family_accounts"):
         conn.execute(text(f"DROP TABLE IF EXISTS {table}"))
 
 
 # ---------------------------------------------------------------------------
 # Private: one-time data backfill
 # ---------------------------------------------------------------------------
+
+def _ensure_local_default_user() -> None:
+    """Create a local owner for data that existed before authentication."""
+    email = settings.DEFAULT_LOCAL_USER_EMAIL.strip().lower()
+    with Session(engine) as session:
+        existing = session.exec(select(User).where(User.email == email)).first()
+        if existing:
+            return
+        session.add(
+            User(
+                email=email,
+                full_name="Usuario Local",
+                password_hash=hash_password(settings.DEFAULT_LOCAL_USER_PASSWORD),
+                is_active=True,
+            )
+        )
+        session.commit()
+
+
+def _backfill_existing_rows_to_default_user() -> None:
+    email = settings.DEFAULT_LOCAL_USER_EMAIL.strip().lower()
+    with Session(engine) as session:
+        user = session.exec(select(User).where(User.email == email)).first()
+        if not user or not user.id:
+            return
+        user_id = int(user.id)
+
+    with engine.begin() as conn:
+        for table in (
+            "accounts",
+            "bank_connections",
+            "budgets",
+            "categories",
+            "fixed_expenses",
+            "import_files",
+            "money_allocations",
+            "recurring_incomes",
+            "savings_goals",
+            "transactions",
+        ):
+            if "user_id" in _existing_columns(conn, table):
+                conn.execute(text(f"UPDATE {table} SET user_id = :user_id WHERE user_id IS NULL"), {"user_id": user_id})
 
 def _backfill_mortgage_currency_to_uf() -> None:
     """Convert mortgage fixed expenses stored in CLP to their UF equivalent.

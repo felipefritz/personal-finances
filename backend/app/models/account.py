@@ -7,6 +7,7 @@ class Account(SQLModel, table=True):
     __tablename__ = "accounts"
 
     id: Optional[int] = Field(default=None, primary_key=True)
+    user_id: Optional[int] = Field(default=None, foreign_key="users.id", index=True)
     name: str = Field(max_length=100)
     bank: Optional[str] = Field(default=None, max_length=100)
     # corriente, vista, ahorro, tarjeta_credito, inversion, efectivo

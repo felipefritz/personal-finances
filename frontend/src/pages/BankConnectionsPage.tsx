@@ -27,29 +27,66 @@ import LinkIcon from '@mui/icons-material/Link';
 import EditIcon from '@mui/icons-material/Edit';
 import VisibilityIcon from '@mui/icons-material/Visibility';
 import VisibilityOffIcon from '@mui/icons-material/VisibilityOff';
-import { getBankConnections, connectFintoc, syncFintocConnection, deleteBankConnection, getFintocAccounts, getFintocCredentials, linkFintocAccount, updateFintocCredentials } from '../api/bankConnections';
+import {
+  getBankConnections,
+  getBankProviders,
+  createBankConnection,
+  deleteBankConnection,
+  getConnectionAccounts,
+  linkConnectionAccount,
+  syncBankConnection,
+  updateBankCredentials,
+} from '../api/bankConnections';
 import { getAccounts } from '../api/accounts';
-import type { Account, BankConnection, FintocConnectResponse, FintocProviderAccount, FintocSyncResponse } from '../types';
+import type { Account, BankConnection, BankSyncResponse, ScrapedProviderAccount } from '../types';
 import { formatDate } from '../utils/formatters';
 import PageHeader from '../components/common/PageHeader';
 import LoadingSpinner from '../components/common/LoadingSpinner';
 
+const STATUS_LABELS: Record<string, string> = {
+  connected: 'Conectada',
+  action_required: 'Requiere acción',
+  error: 'Error',
+  disconnected: 'Desconectada',
+};
+
+const STATUS_COLORS: Record<string, 'success' | 'warning' | 'error' | 'default'> = {
+  connected: 'success',
+  action_required: 'warning',
+  error: 'error',
+  disconnected: 'default',
+};
+
+const CHECKING_TYPES = ['corriente', 'vista'];
+
 export default function BankConnectionsPage() {
   const qc = useQueryClient();
-  const [widgetToken, setWidgetToken] = useState('');
-  const [fintocSecretKey, setFintocSecretKey] = useState('');
+
+  // Formulario de nueva conexión
+  const [provider, setProvider] = useState('');
+  const [rut, setRut] = useState('');
+  const [password, setPassword] = useState('');
+  const [displayName, setDisplayName] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+
   const [deleteId, setDeleteId] = useState<number | null>(null);
-  const [lastConnectionResult, setLastConnectionResult] = useState<FintocConnectResponse | null>(null);
-  const [lastSyncResult, setLastSyncResult] = useState<FintocSyncResponse | null>(null);
-  const [providerAccountsByConnection, setProviderAccountsByConnection] = useState<Record<number, FintocProviderAccount[]>>({});
-  const [selectedProviderAccountsByConnection, setSelectedProviderAccountsByConnection] = useState<Record<number, string[]>>({});
-  const [loadingAccountsByConnection, setLoadingAccountsByConnection] = useState<Record<number, boolean>>({});
+  const [lastSyncResult, setLastSyncResult] = useState<BankSyncResponse | null>(null);
+
+  // Cuentas descubiertas por conexión
+  const [accountsByConnection, setAccountsByConnection] = useState<Record<number, ScrapedProviderAccount[]>>({});
+  const [selectedByConnection, setSelectedByConnection] = useState<Record<number, string[]>>({});
+  const [loadingAccounts, setLoadingAccounts] = useState<Record<number, boolean>>({});
+
+  // Edición de credenciales
   const [editingConnection, setEditingConnection] = useState<BankConnection | null>(null);
-  const [editLinkToken, setEditLinkToken] = useState('');
-  const [editSecretKey, setEditSecretKey] = useState('');
-  const [showEditLinkToken, setShowEditLinkToken] = useState(false);
-  const [showEditSecretKey, setShowEditSecretKey] = useState(false);
-  const [loadingEditCredentials, setLoadingEditCredentials] = useState(false);
+  const [editRut, setEditRut] = useState('');
+  const [editPassword, setEditPassword] = useState('');
+  const [showEditPassword, setShowEditPassword] = useState(false);
+
+  const { data: providers = [] } = useQuery({
+    queryKey: ['bank-providers'],
+    queryFn: getBankProviders,
+  });
 
   const { data: connections = [], isLoading } = useQuery({
     queryKey: ['bank-connections'],
@@ -62,25 +99,24 @@ export default function BankConnectionsPage() {
   });
 
   const connectMut = useMutation({
-    mutationFn: ({ token, secretKey }: { token: string; secretKey?: string }) => connectFintoc(token, undefined, secretKey),
-    onSuccess: (result) => {
-      setLastConnectionResult(result);
+    mutationFn: createBankConnection,
+    onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['bank-connections'] });
-      qc.invalidateQueries({ queryKey: ['transactions'] });
-      setWidgetToken('');
+      qc.invalidateQueries({ queryKey: ['accounts'] });
+      setRut('');
+      setPassword('');
+      setDisplayName('');
     },
   });
 
   const syncMut = useMutation({
     mutationFn: ({
       connectionId,
-      providerAccountId,
       providerAccountIds,
     }: {
       connectionId: number;
-      providerAccountId?: string;
       providerAccountIds?: string[];
-    }) => syncFintocConnection(connectionId, providerAccountId, providerAccountIds),
+    }) => syncBankConnection(connectionId, undefined, providerAccountIds),
     onSuccess: (result) => {
       setLastSyncResult(result);
       qc.invalidateQueries({ queryKey: ['transactions'] });
@@ -107,142 +143,107 @@ export default function BankConnectionsPage() {
       connectionId: number;
       providerAccountId: string;
       localAccountId?: number;
-      enabled?: boolean;
-    }) => linkFintocAccount(connectionId, providerAccountId, localAccountId, enabled),
-    onSuccess: async (_result, variables) => {
-      await loadProviderAccounts(variables.connectionId);
+      enabled: boolean;
+    }) => linkConnectionAccount(connectionId, providerAccountId, localAccountId, enabled),
+    onSuccess: (_result, variables) => {
       qc.invalidateQueries({ queryKey: ['accounts'] });
+      void loadAccounts(variables.connectionId);
     },
   });
 
   const updateCredentialsMut = useMutation({
-    mutationFn: ({ connectionId, linkToken, secretKey }: { connectionId: number; linkToken?: string; secretKey?: string }) =>
-      updateFintocCredentials(connectionId, linkToken, secretKey),
+    mutationFn: ({ connectionId, rut, password }: { connectionId: number; rut?: string; password?: string }) =>
+      updateBankCredentials(connectionId, { rut, password }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['bank-connections'] });
-      setEditingConnection(null);
-      setEditLinkToken('');
-      setEditSecretKey('');
-      setShowEditLinkToken(false);
-      setShowEditSecretKey(false);
+      closeEditCredentials();
     },
   });
 
   const onConnect = () => {
-    if (!widgetToken.trim() || connectMut.isPending) return;
-    connectMut.mutate({ token: widgetToken.trim(), secretKey: fintocSecretKey.trim() || undefined });
+    if (!provider || !rut.trim() || !password.trim() || connectMut.isPending) return;
+    connectMut.mutate({
+      provider,
+      rut: rut.trim(),
+      password: password.trim(),
+      display_name: displayName.trim() || undefined,
+    });
   };
 
-  const loadProviderAccounts = async (connectionId: number) => {
-    setLoadingAccountsByConnection((prev) => ({ ...prev, [connectionId]: true }));
+  const loadAccounts = async (connectionId: number) => {
+    setLoadingAccounts((prev) => ({ ...prev, [connectionId]: true }));
     try {
-      const accounts = await getFintocAccounts(connectionId);
-      setProviderAccountsByConnection((prev) => ({ ...prev, [connectionId]: accounts }));
-
-      const explicitlyEnabledIds = accounts.filter((account) => account.sync_enabled).map((account) => account.id);
+      const accounts = await getConnectionAccounts(connectionId);
+      setAccountsByConnection((prev) => ({ ...prev, [connectionId]: accounts }));
+      const enabledIds = accounts.filter((a) => a.sync_enabled).map((a) => a.external_id);
       const checkingIds = accounts
-        .filter((account) => ['checking_account', 'current_account'].includes(String(account.type ?? '').toLowerCase()))
-        .map((account) => account.id);
-      const defaultSelection = explicitlyEnabledIds.length > 0
-        ? explicitlyEnabledIds
-        : (checkingIds.length > 0 ? checkingIds : accounts.map((account) => account.id));
-      setSelectedProviderAccountsByConnection((prev) => ({
+        .filter((a) => CHECKING_TYPES.includes(String(a.account_type ?? '').toLowerCase()))
+        .map((a) => a.external_id);
+      const defaultSelection = enabledIds.length > 0
+        ? enabledIds
+        : (checkingIds.length > 0 ? checkingIds : accounts.map((a) => a.external_id));
+      setSelectedByConnection((prev) => ({
         ...prev,
-        [connectionId]: prev[connectionId] && prev[connectionId].length > 0 ? prev[connectionId] : defaultSelection,
+        [connectionId]: prev[connectionId]?.length ? prev[connectionId] : defaultSelection,
       }));
     } finally {
-      setLoadingAccountsByConnection((prev) => ({ ...prev, [connectionId]: false }));
+      setLoadingAccounts((prev) => ({ ...prev, [connectionId]: false }));
     }
   };
 
-  const toggleProviderAccountSelection = (connectionId: number, providerAccountId: string, checked: boolean) => {
-    setSelectedProviderAccountsByConnection((prev) => {
+  const toggleAccountSelection = (connectionId: number, account: ScrapedProviderAccount, checked: boolean) => {
+    setSelectedByConnection((prev) => {
       const current = prev[connectionId] ?? [];
       const next = checked
-        ? Array.from(new Set([...current, providerAccountId]))
-        : current.filter((id) => id !== providerAccountId);
+        ? Array.from(new Set([...current, account.external_id]))
+        : current.filter((id) => id !== account.external_id);
       return { ...prev, [connectionId]: next };
     });
-
-    const accounts = providerAccountsByConnection[connectionId] ?? [];
-    const currentAccount = accounts.find((account) => account.id === providerAccountId);
-    void linkMut.mutate({
+    linkMut.mutate({
       connectionId,
-      providerAccountId,
-      localAccountId: currentAccount?.local_account_id,
+      providerAccountId: account.external_id,
+      localAccountId: account.local_account_id,
       enabled: checked,
     });
   };
 
-  const selectOnlyChecking = (connectionId: number) => {
-    const accounts = providerAccountsByConnection[connectionId] ?? [];
-    const checkingIds = accounts
-      .filter((account) => ['checking_account', 'current_account'].includes(String(account.type ?? '').toLowerCase()))
-      .map((account) => account.id);
-    setSelectedProviderAccountsByConnection((prev) => ({
-      ...prev,
-      [connectionId]: checkingIds,
-    }));
-  };
-
-  const selectAllAccounts = (connectionId: number) => {
-    const accounts = providerAccountsByConnection[connectionId] ?? [];
-    setSelectedProviderAccountsByConnection((prev) => ({
-      ...prev,
-      [connectionId]: accounts.map((account) => account.id),
-    }));
-  };
-
-  const updateLinkedLocalAccount = (connectionId: number, providerAccountId: string, localAccountId: number | '') => {
-    setProviderAccountsByConnection((prev) => ({
-      ...prev,
-      [connectionId]: (prev[connectionId] ?? []).map((account) =>
-        account.id === providerAccountId
-          ? {
-              ...account,
-              local_account_id: localAccountId === '' ? undefined : Number(localAccountId),
-              local_account_name:
-                localAccountId === ''
-                  ? undefined
-                  : systemAccounts.find((item) => item.id === Number(localAccountId))?.name,
-            }
-          : account
-      ),
-    }));
-
-    void linkMut.mutate({
+  const updateLinkedLocalAccount = (
+    connectionId: number,
+    account: ScrapedProviderAccount,
+    localAccountId: number | ''
+  ) => {
+    const enabled = (selectedByConnection[connectionId] ?? []).includes(account.external_id);
+    linkMut.mutate({
       connectionId,
-      providerAccountId,
+      providerAccountId: account.external_id,
       localAccountId: localAccountId === '' ? undefined : Number(localAccountId),
-      enabled: (selectedProviderAccountsByConnection[connectionId] ?? []).includes(providerAccountId),
+      enabled,
     });
   };
 
-  const openEditCredentials = async (conn: BankConnection) => {
+  const openEditCredentials = (conn: BankConnection) => {
     setEditingConnection(conn);
-    setLoadingEditCredentials(true);
-    setEditLinkToken('');
-    setEditSecretKey('');
-    setShowEditLinkToken(false);
-    setShowEditSecretKey(false);
-    try {
-      const data = await getFintocCredentials(conn.id);
-      setEditLinkToken(data.access_token || '');
-      setEditSecretKey(data.fintoc_secret_key || '');
-    } finally {
-      setLoadingEditCredentials(false);
-    }
+    setEditRut('');
+    setEditPassword('');
+    setShowEditPassword(false);
+  };
+
+  const closeEditCredentials = () => {
+    setEditingConnection(null);
+    setEditRut('');
+    setEditPassword('');
+    setShowEditPassword(false);
   };
 
   const saveEditedCredentials = () => {
     if (!editingConnection) return;
-    const linkToken = editLinkToken.trim() || undefined;
-    const secretKey = editSecretKey.trim() || undefined;
-    if (!linkToken && !secretKey) return;
+    const rutValue = editRut.trim() || undefined;
+    const passwordValue = editPassword.trim() || undefined;
+    if (!rutValue && !passwordValue) return;
     updateCredentialsMut.mutate({
       connectionId: editingConnection.id,
-      linkToken,
-      secretKey,
+      rut: rutValue,
+      password: passwordValue,
     });
   };
 
@@ -252,106 +253,125 @@ export default function BankConnectionsPage() {
     <Box>
       <PageHeader
         title="Conexiones Bancarias"
-        subtitle="Sincroniza movimientos desde proveedores como Fintoc"
+        subtitle="Conecta tus bancos con tu RUT y clave. Los movimientos y saldos se sincronizan automáticamente."
       />
 
       <Card elevation={0} sx={{ border: '1px solid', borderColor: 'divider', mb: 2 }}>
         <CardContent>
           <Typography variant="subtitle1" fontWeight={700} gutterBottom>
-            Conectar con Fintoc
+            Conectar un banco
           </Typography>
-          <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.5}>
-            <TextField
-              fullWidth
-              size="small"
-              label="Widget token"
-              placeholder="ingresa token del widget"
-              value={widgetToken}
-              onChange={(e) => setWidgetToken(e.target.value)}
-            />
-            <TextField
-              fullWidth
-              size="small"
-              label="Fintoc secret key (opcional)"
-              placeholder="sk_live_..."
-              value={fintocSecretKey}
-              onChange={(e) => setFintocSecretKey(e.target.value)}
-              type="password"
-            />
-            <Button
-              variant="contained"
-              startIcon={<LinkIcon />}
-              onClick={onConnect}
-              disabled={connectMut.isPending || !widgetToken.trim()}
-            >
-              {connectMut.isPending ? 'Conectando...' : 'Conectar'}
-            </Button>
+          <Stack spacing={1.5}>
+            <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.5}>
+              <TextField
+                select
+                fullWidth
+                size="small"
+                label="Banco"
+                value={provider}
+                onChange={(e) => setProvider(e.target.value)}
+              >
+                {providers.map((p) => (
+                  <MenuItem key={p.id} value={p.id}>{p.label}</MenuItem>
+                ))}
+              </TextField>
+              <TextField
+                fullWidth
+                size="small"
+                label="RUT"
+                placeholder="12.345.678-9"
+                value={rut}
+                onChange={(e) => setRut(e.target.value)}
+              />
+            </Stack>
+            <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.5}>
+              <TextField
+                fullWidth
+                size="small"
+                label="Clave de banco en línea"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                type={showPassword ? 'text' : 'password'}
+                InputProps={{
+                  endAdornment: (
+                    <InputAdornment position="end">
+                      <IconButton onClick={() => setShowPassword((v) => !v)} edge="end" size="small">
+                        {showPassword ? <VisibilityOffIcon fontSize="small" /> : <VisibilityIcon fontSize="small" />}
+                      </IconButton>
+                    </InputAdornment>
+                  ),
+                }}
+              />
+              <TextField
+                fullWidth
+                size="small"
+                label="Nombre (opcional)"
+                placeholder="Ej: BCI sueldo"
+                value={displayName}
+                onChange={(e) => setDisplayName(e.target.value)}
+              />
+            </Stack>
+            <Box>
+              <Button
+                variant="contained"
+                startIcon={connectMut.isPending ? <CircularProgress size={16} color="inherit" /> : <LinkIcon />}
+                onClick={onConnect}
+                disabled={connectMut.isPending || !provider || !rut.trim() || !password.trim()}
+              >
+                {connectMut.isPending ? 'Validando...' : 'Conectar'}
+              </Button>
+            </Box>
           </Stack>
-          {connectMut.isError && <Alert severity="error" sx={{ mt: 1.5 }}>No se pudo conectar o validar Fintoc.</Alert>}
           <Alert severity="info" sx={{ mt: 1.5 }}>
-            Puedes ingresar la clave secreta de Fintoc aquí para conectar y sincronizar sin editar el archivo .env manualmente.
+            Tu clave se guarda cifrada en este equipo y solo se usa para entrar al sitio de tu banco. Si el banco
+            pide verificación adicional (token/2FA), la conexión quedará marcada como «Requiere acción».
           </Alert>
-          {connectMut.isSuccess && lastConnectionResult && (
-            <Alert severity="success" sx={{ mt: 1.5 }}>
-              Conexion validada correctamente. Cuentas detectadas: {lastConnectionResult.validation?.accounts_count ?? 0}. Movimientos de prueba: {lastConnectionResult.validation?.sample_movements_count ?? 0}.
+          {connectMut.isError && (
+            <Alert severity="error" sx={{ mt: 1.5 }}>
+              No se pudo crear la conexión. Revisa el RUT y la clave.
             </Alert>
           )}
-          {syncMut.isSuccess && lastSyncResult && (
+          {connectMut.isSuccess && (
             <Alert severity="success" sx={{ mt: 1.5 }}>
-              Se sincronizaron {lastSyncResult.synced_count} movimientos y se guardaron {lastSyncResult.saved_count} nuevos.
-              {lastSyncResult.accounts.length > 0 && (
-                <Box sx={{ mt: 1 }}>
-                  {lastSyncResult.accounts.map((account) => (
-                    <Typography key={account.provider_account_id} variant="body2">
-                      {account.provider_account_name}: {account.saved_count} guardados, {account.skipped_count} omitidos.
-                    </Typography>
-                  ))}
-                </Box>
-              )}
-            </Alert>
-          )}
-          {syncMut.isSuccess && lastSyncResult?.mock_mode && (
-            <Alert severity="warning" sx={{ mt: 1.5 }}>
-              Estás en modo demo de Fintoc. Estos movimientos son de ejemplo y no corresponden a tu cuenta real.
-              Configura FINTOC_SECRET_KEY, vuelve a conectar Fintoc y sincroniza nuevamente.
+              Conexión creada. Si quedó «Conectada», lista sus cuentas para elegir cuáles sincronizar.
             </Alert>
           )}
         </CardContent>
       </Card>
 
       <Stack spacing={1.5}>
-        {connections.map((conn: BankConnection) => (
-          <Card key={conn.id} elevation={0} sx={{ border: '1px solid', borderColor: 'divider' }}>
-            <CardContent>
-              <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 1 }}>
-                <Box>
-                  <Stack direction="row" spacing={1} alignItems="center" mb={0.5}>
-                    <Typography variant="subtitle1" fontWeight={700}>{conn.display_name}</Typography>
-                    <Chip
-                      size="small"
-                      label={conn.status}
-                      color={conn.status === 'connected' ? 'success' : conn.status === 'error' ? 'error' : 'default'}
-                    />
-                  </Stack>
+        {connections.map((conn: BankConnection) => {
+          const accounts = accountsByConnection[conn.id] ?? [];
+          const selectedIds = selectedByConnection[conn.id] ?? [];
+          return (
+            <Card key={conn.id} elevation={0} sx={{ border: '1px solid', borderColor: 'divider' }}>
+              <CardContent>
+                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 1 }}>
+                  <Box>
+                    <Stack direction="row" spacing={1} alignItems="center" mb={0.5}>
+                      <Typography variant="subtitle1" fontWeight={700}>{conn.display_name}</Typography>
+                      <Chip
+                        size="small"
+                        label={STATUS_LABELS[conn.status] ?? conn.status}
+                        color={STATUS_COLORS[conn.status] ?? 'default'}
+                      />
+                    </Stack>
                     <Typography variant="body2" color="text.secondary">
-                    Proveedor: {conn.provider} | Ultima sincronizacion: {conn.last_sync ? formatDate(conn.last_sync) : 'Nunca'}
-                  </Typography>
-                    {conn.provider === 'fintoc' && (
-                      <Typography variant="caption" color="text.secondary" display="block">
-                        Link token: {conn.has_access_token ? (conn.access_token_masked || 'guardado') : 'no guardado'} | Fintoc key: {conn.has_fintoc_secret_key ? (conn.fintoc_secret_key_masked || 'guardada') : 'no guardada'}
-                      </Typography>
-                    )}
-                </Box>
-                <Box>
-                  <IconButton
-                    color="primary"
-                    onClick={() => syncMut.mutate({ connectionId: conn.id })}
-                    disabled={syncMut.isPending}
-                    title="Sincronizar"
-                  >
-                    <SyncIcon />
-                  </IconButton>
-                  {conn.provider === 'fintoc' && (
+                      {conn.provider_label ?? conn.provider}
+                      {conn.rut_masked ? ` · ${conn.rut_masked}` : ''}
+                      {' · Última sincronización: '}
+                      {conn.last_sync ? formatDate(conn.last_sync) : 'Nunca'}
+                    </Typography>
+                  </Box>
+                  <Box>
+                    <IconButton
+                      color="primary"
+                      onClick={() => syncMut.mutate({ connectionId: conn.id })}
+                      disabled={syncMut.isPending}
+                      title="Sincronizar ahora"
+                    >
+                      <SyncIcon />
+                    </IconButton>
                     <IconButton
                       color="default"
                       onClick={() => openEditCredentials(conn)}
@@ -359,67 +379,54 @@ export default function BankConnectionsPage() {
                     >
                       <EditIcon />
                     </IconButton>
-                  )}
-                  <IconButton color="error" onClick={() => setDeleteId(conn.id)} title="Eliminar">
-                    <DeleteIcon />
-                  </IconButton>
+                    <IconButton color="error" onClick={() => setDeleteId(conn.id)} title="Eliminar">
+                      <DeleteIcon />
+                    </IconButton>
+                  </Box>
                 </Box>
-              </Box>
 
-              {conn.provider === 'fintoc' && (
+                {(conn.status === 'error' || conn.status === 'action_required') && conn.last_error && (
+                  <Alert severity={conn.status === 'error' ? 'error' : 'warning'} sx={{ mt: 1.5 }}>
+                    {conn.last_error}
+                  </Alert>
+                )}
+
                 <Box sx={{ mt: 2 }}>
                   <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1}>
                     <Button
                       size="small"
                       variant="outlined"
-                      onClick={() => loadProviderAccounts(conn.id)}
-                      disabled={Boolean(loadingAccountsByConnection[conn.id])}
+                      onClick={() => loadAccounts(conn.id)}
+                      disabled={Boolean(loadingAccounts[conn.id])}
                     >
-                      {loadingAccountsByConnection[conn.id] ? 'Cargando cuentas...' : 'Listar cuentas'}
+                      {loadingAccounts[conn.id] ? 'Cargando cuentas...' : 'Listar cuentas'}
                     </Button>
-                    {providerAccountsByConnection[conn.id]?.length ? (
-                      <>
-                        <Button size="small" onClick={() => selectOnlyChecking(conn.id)}>
-                          Solo cuenta corriente
-                        </Button>
-                        <Button size="small" onClick={() => selectAllAccounts(conn.id)}>
-                          Seleccionar todas
-                        </Button>
-                        <Button
-                          size="small"
-                          variant="contained"
-                          onClick={() =>
-                            syncMut.mutate({
-                              connectionId: conn.id,
-                              providerAccountIds: selectedProviderAccountsByConnection[conn.id] ?? [],
-                            })
-                          }
-                          disabled={
-                            syncMut.isPending ||
-                            (selectedProviderAccountsByConnection[conn.id]?.length ?? 0) === 0
-                          }
-                        >
-                          Sincronizar seleccionadas
-                        </Button>
-                      </>
-                    ) : null}
+                    {accounts.length > 0 && (
+                      <Button
+                        size="small"
+                        variant="contained"
+                        onClick={() => syncMut.mutate({ connectionId: conn.id, providerAccountIds: selectedIds })}
+                        disabled={syncMut.isPending || selectedIds.length === 0}
+                      >
+                        Sincronizar seleccionadas
+                      </Button>
+                    )}
                   </Stack>
 
-                  {loadingAccountsByConnection[conn.id] && (
+                  {loadingAccounts[conn.id] && (
                     <Box sx={{ mt: 1, display: 'flex', alignItems: 'center', gap: 1 }}>
                       <CircularProgress size={16} />
-                      <Typography variant="body2" color="text.secondary">Obteniendo cuentas desde Fintoc...</Typography>
+                      <Typography variant="body2" color="text.secondary">Obteniendo cuentas del banco...</Typography>
                     </Box>
                   )}
 
-                  {(providerAccountsByConnection[conn.id] ?? []).length > 0 && (
+                  {accounts.length > 0 && (
                     <Box sx={{ mt: 1 }}>
-                      {(providerAccountsByConnection[conn.id] ?? []).map((account) => {
-                        const selectedIds = selectedProviderAccountsByConnection[conn.id] ?? [];
-                        const checked = selectedIds.includes(account.id);
+                      {accounts.map((account) => {
+                        const checked = selectedIds.includes(account.external_id);
                         return (
                           <Box
-                            key={account.id}
+                            key={account.external_id}
                             sx={{
                               display: 'grid',
                               gridTemplateColumns: { xs: '1fr', md: 'auto 1fr 1fr' },
@@ -434,17 +441,17 @@ export default function BankConnectionsPage() {
                               control={
                                 <Checkbox
                                   checked={checked}
-                                  onChange={(e) => toggleProviderAccountSelection(conn.id, account.id, e.target.checked)}
+                                  onChange={(e) => toggleAccountSelection(conn.id, account, e.target.checked)}
                                 />
                               }
                               label={account.name}
                             />
                             <Box>
                               <Typography variant="body2" fontWeight={600}>
-                                {account.type ?? 'account'}
+                                {account.account_type ?? 'cuenta'}
                               </Typography>
                               <Typography variant="caption" color="text.secondary">
-                                Saldo Fintoc: {account.balance_amount?.toLocaleString('es-CL') ?? '0'} {account.currency ?? 'CLP'}
+                                {account.account_type === 'tarjeta_credito' ? 'Monto informado' : 'Saldo informado'}: {account.balance?.toLocaleString('es-CL') ?? '—'} {account.currency ?? 'CLP'}
                               </Typography>
                             </Box>
                             <TextField
@@ -452,10 +459,12 @@ export default function BankConnectionsPage() {
                               size="small"
                               label="Cuenta del sistema"
                               value={account.local_account_id ?? ''}
-                              onChange={(e) => updateLinkedLocalAccount(conn.id, account.id, e.target.value === '' ? '' : Number(e.target.value))}
+                              onChange={(e) =>
+                                updateLinkedLocalAccount(conn.id, account, e.target.value === '' ? '' : Number(e.target.value))
+                              }
                               disabled={linkMut.isPending}
                             >
-                              <MenuItem value="">Sin asociar</MenuItem>
+                              <MenuItem value="">Crear/autovincular</MenuItem>
                               {systemAccounts.map((systemAccount: Account) => (
                                 <MenuItem key={systemAccount.id} value={systemAccount.id}>
                                   {systemAccount.name} · {systemAccount.account_type}
@@ -468,10 +477,10 @@ export default function BankConnectionsPage() {
                     </Box>
                   )}
                 </Box>
-              )}
-            </CardContent>
-          </Card>
-        ))}
+              </CardContent>
+            </Card>
+          );
+        })}
         {connections.length === 0 && (
           <Card elevation={0} sx={{ border: '1px solid', borderColor: 'divider' }}>
             <CardContent>
@@ -481,10 +490,27 @@ export default function BankConnectionsPage() {
         )}
       </Stack>
 
+      {syncMut.isSuccess && lastSyncResult && (
+        <Alert severity="success" sx={{ mt: 2 }}>
+          Se revisaron {lastSyncResult.synced_count} movimientos y se guardaron {lastSyncResult.saved_count} nuevos.
+          {lastSyncResult.accounts.length > 0 && (
+            <Box sx={{ mt: 1 }}>
+              {lastSyncResult.accounts.map((account) => (
+                <Typography key={account.provider_account_id} variant="body2">
+                  {account.provider_account_name}: {account.saved_count} guardados, {account.skipped_count} omitidos.
+                </Typography>
+              ))}
+            </Box>
+          )}
+        </Alert>
+      )}
+
       <Dialog open={deleteId !== null} onClose={() => setDeleteId(null)} maxWidth="xs" fullWidth>
         <DialogTitle>Eliminar conexión</DialogTitle>
         <DialogContent>
-          <Typography variant="body2">¿Seguro que quieres eliminar esta conexión bancaria?</Typography>
+          <Typography variant="body2">
+            ¿Seguro que quieres eliminar esta conexión bancaria? Las transacciones ya importadas se conservan.
+          </Typography>
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setDeleteId(null)}>Cancelar</Button>
@@ -499,46 +525,33 @@ export default function BankConnectionsPage() {
         </DialogActions>
       </Dialog>
 
-      <Dialog open={editingConnection !== null} onClose={() => setEditingConnection(null)} maxWidth="sm" fullWidth>
-        <DialogTitle>Editar conexión Fintoc</DialogTitle>
+      <Dialog open={editingConnection !== null} onClose={closeEditCredentials} maxWidth="sm" fullWidth>
+        <DialogTitle>Editar credenciales</DialogTitle>
         <DialogContent>
           <Stack spacing={1.5} sx={{ mt: 0.5 }}>
             <Alert severity="info">
-              Puedes dejar un campo vacío para mantener el valor actual guardado.
+              Deja un campo vacío para mantener el valor guardado. Al guardar se reintenta el login.
             </Alert>
             <TextField
               fullWidth
               size="small"
-              label="Link token"
-              placeholder={editingConnection?.access_token_masked || 'link_token'}
-              value={editLinkToken}
-              onChange={(e) => setEditLinkToken(e.target.value)}
-              type={showEditLinkToken ? 'text' : 'password'}
-              disabled={loadingEditCredentials}
-              InputProps={{
-                endAdornment: (
-                  <InputAdornment position="end">
-                    <IconButton onClick={() => setShowEditLinkToken((v) => !v)} edge="end">
-                      {showEditLinkToken ? <VisibilityOffIcon /> : <VisibilityIcon />}
-                    </IconButton>
-                  </InputAdornment>
-                ),
-              }}
+              label="RUT"
+              placeholder={editingConnection?.rut_masked || '12.345.678-9'}
+              value={editRut}
+              onChange={(e) => setEditRut(e.target.value)}
             />
             <TextField
               fullWidth
               size="small"
-              label="Fintoc secret key"
-              placeholder={editingConnection?.fintoc_secret_key_masked || 'sk_live_...'}
-              value={editSecretKey}
-              onChange={(e) => setEditSecretKey(e.target.value)}
-              type={showEditSecretKey ? 'text' : 'password'}
-              disabled={loadingEditCredentials}
+              label="Clave de banco en línea"
+              value={editPassword}
+              onChange={(e) => setEditPassword(e.target.value)}
+              type={showEditPassword ? 'text' : 'password'}
               InputProps={{
                 endAdornment: (
                   <InputAdornment position="end">
-                    <IconButton onClick={() => setShowEditSecretKey((v) => !v)} edge="end">
-                      {showEditSecretKey ? <VisibilityOffIcon /> : <VisibilityIcon />}
+                    <IconButton onClick={() => setShowEditPassword((v) => !v)} edge="end" size="small">
+                      {showEditPassword ? <VisibilityOffIcon fontSize="small" /> : <VisibilityIcon fontSize="small" />}
                     </IconButton>
                   </InputAdornment>
                 ),
@@ -547,11 +560,11 @@ export default function BankConnectionsPage() {
           </Stack>
         </DialogContent>
         <DialogActions>
-          <Button onClick={() => setEditingConnection(null)}>Cancelar</Button>
+          <Button onClick={closeEditCredentials}>Cancelar</Button>
           <Button
             variant="contained"
             onClick={saveEditedCredentials}
-            disabled={loadingEditCredentials || updateCredentialsMut.isPending || (!editLinkToken.trim() && !editSecretKey.trim())}
+            disabled={updateCredentialsMut.isPending || (!editRut.trim() && !editPassword.trim())}
           >
             {updateCredentialsMut.isPending ? 'Guardando...' : 'Guardar'}
           </Button>

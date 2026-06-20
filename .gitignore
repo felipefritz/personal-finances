@@ -8,6 +8,7 @@ __pycache__/
 *.pyd
 .pytest_cache/
 .mypy_cache/
+.ruff_cache/
 .venv/
 backend/.venv/
 
@@ -16,14 +17,28 @@ backend/.venv/
 backend/.env
 frontend/.env
 
-# Databases and uploads
+# Local data, databases and private imports
 *.db
+*.db-*
+*.db.bak*
+*.sqlite
+*.sqlite3
+*.sqlite*
+*.bak
+backend/data/
 backend/uploads/
+backend/*.pdf
+backend/*.xls
+backend/*.xlsx
+backend/*.csv
 
 # Node
 node_modules/
 frontend/node_modules/
 frontend/dist/
+dist/
+build/
+coverage/
 
 # IDE
 .vscode/

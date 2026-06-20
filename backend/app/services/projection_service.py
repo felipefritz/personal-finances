@@ -36,7 +36,7 @@ def project_annual_balance(
     session: Session,
     year: int,
     account_id: Optional[int] = None,
-    include_fintoc_internal_transfers: bool = False,
+    include_internal_transfers: bool = False,
 ) -> List[Dict[str, Any]]:
     today = date.today()
 
@@ -69,7 +69,7 @@ def project_annual_balance(
         today.month,
         today.year,
         account_id,
-        include_fintoc_internal_transfers=include_fintoc_internal_transfers,
+        include_internal_transfers=include_internal_transfers,
     )
 
     # ── Recurring budget template (user-planned variable spending) ────────
@@ -90,7 +90,7 @@ def project_annual_balance(
                 total_recurring_income, fixed_expenses_list, goals,
                 installment_txs,
                 statement_month_by_import_id,
-                include_fintoc_internal_transfers=include_fintoc_internal_transfers,
+                include_internal_transfers=include_internal_transfers,
             )
         else:
             month_data = _build_projected_month(
@@ -118,7 +118,7 @@ def _build_actual_month(
     goals: list,
     installment_txs: list = [],
     statement_month_by_import_id: Optional[Dict[int, str]] = None,
-    include_fintoc_internal_transfers: bool = False,
+    include_internal_transfers: bool = False,
 ) -> Dict[str, Any]:
     start = date(year, month, 1)
     end = date(year + 1, 1, 1) if month == 12 else date(year, month + 1, 1)
@@ -135,7 +135,7 @@ def _build_actual_month(
     valid_txs = [
         t
         for t in txs
-        if include_fintoc_internal_transfers or not _is_fintoc_internal_transfer(t)
+        if include_internal_transfers or not _is_bank_internal_transfer(t)
     ]
 
     real_income = sum(_projection_amount(t) for t in valid_txs if t.transaction_type == "income")
@@ -383,8 +383,13 @@ def _month_diff(start: date, end: date) -> int:
     return (end.year - start.year) * 12 + (end.month - start.month)
 
 
-def _is_fintoc_internal_transfer(tx: Transaction) -> bool:
-    if tx.source != "fintoc":
+_MANUAL_SOURCES = {"manual", "excel", "pdf"}
+
+
+def _is_bank_internal_transfer(tx: Transaction) -> bool:
+    """Transferencias entre cuentas propias traídas por una conexión bancaria
+    (fintoc legado o scrapers actuales)."""
+    if (tx.source or "manual") in _MANUAL_SOURCES:
         return False
 
     if tx.is_transfer or tx.transaction_type == "transfer":
@@ -447,7 +452,7 @@ def _avg_variable_last_3(
     current_month: int,
     current_year: int,
     account_id: Optional[int] = None,
-    include_fintoc_internal_transfers: bool = False,
+    include_internal_transfers: bool = False,
 ) -> float:
     """Average of variable (non-fixed, non-debt) expenses over last 3 months."""
     totals = []
@@ -473,7 +478,7 @@ def _avg_variable_last_3(
         valid_txs = [
             t
             for t in txs
-            if include_fintoc_internal_transfers or not _is_fintoc_internal_transfer(t)
+            if include_internal_transfers or not _is_bank_internal_transfer(t)
         ]
         totals.append(sum(abs(_projection_amount(t)) for t in valid_txs))
         m -= 1

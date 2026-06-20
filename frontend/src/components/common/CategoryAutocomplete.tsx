@@ -1,5 +1,6 @@
-import { Autocomplete, TextField, createFilterOptions } from '@mui/material';
+import { Autocomplete, Box, TextField, createFilterOptions } from '@mui/material';
 import { Category } from '../../types';
+import CategoryLabel from './CategoryLabel';
 
 interface Props {
   categories: Category[];
@@ -60,6 +61,15 @@ export default function CategoryAutocomplete({
       disableClearable={!allowClear}
       size={size}
       fullWidth={fullWidth}
+      renderOption={(props, option) => {
+        const parent = option.parent_id ? categories.find((c) => c.id === option.parent_id) : null;
+        const color = option.color ?? parent?.color;
+        return (
+          <Box component="li" {...props}>
+            <CategoryLabel name={option.name} color={color} />
+          </Box>
+        );
+      }}
       renderInput={(params) => <TextField {...params} label={label} />}
       noOptionsText="Sin resultados"
     />

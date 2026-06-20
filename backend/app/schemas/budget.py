@@ -29,6 +29,9 @@ class BudgetRead(BudgetBase):
     category_color: Optional[str] = None
     difference: float = 0.0
     status: str = "ok"  # ok, near_limit, exceeded
+    reserved_amount: float = 0.0
+    funding_gap: float = 0.0
+    free_to_spend: float = 0.0
     created_at: datetime
     updated_at: datetime
 

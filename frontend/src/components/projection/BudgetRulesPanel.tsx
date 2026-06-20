@@ -355,7 +355,7 @@ export default function BudgetRulesPanel({ year, month, includeInternalTransfers
                   <Typography variant="body2">Necesidades del mes: {formatCurrency(currentNeeds)}</Typography>
                   <Typography variant="body2">Ahorro sugerido: {formatCurrency(currentSavings)}</Typography>
                   <Typography variant="body2">
-                    Formula aplicada: Deseos/Variables = Saldo libre utilizable del mes despues de necesidades y ahorro = {formatCurrency(currentWants)} ({currentWantsPct}%)
+                    Formula aplicada: Deseos/Variables = caja libre del mes despues de necesidades y ahorro = {formatCurrency(currentWants)} ({currentWantsPct}%)
                   </Typography>
                   <Typography variant="body2">
                     Meta segun regla {selectedRule.label}: {selectedRule.wants}% = {formatCurrency(Math.round((currentMonthlyIncome * selectedRule.wants) / 100))}

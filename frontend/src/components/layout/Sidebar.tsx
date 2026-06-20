@@ -23,25 +23,25 @@ import CalendarMonthIcon from '@mui/icons-material/CalendarMonth';
 
 const NAV_GROUPS = [
   {
-    group: 'Principal',
+    group: 'Plan mensual',
     items: [
-      { label: 'Dashboard', to: '/dashboard', icon: <DashboardIcon fontSize="small" /> },
+      { label: 'Inicio', to: '/dashboard', icon: <DashboardIcon fontSize="small" /> },
       { label: 'Proyección', to: '/proyeccion', icon: <CalendarMonthIcon fontSize="small" /> },
+      { label: 'Presupuestos y metas', to: '/planning', icon: <PieChartIcon fontSize="small" /> },
     ],
   },
   {
-    group: 'Dinero',
+    group: 'Dinero diario',
     items: [
       { label: 'Cuentas', to: '/accounts', icon: <AccountBalanceIcon fontSize="small" /> },
       { label: 'Movimientos', to: '/transactions', icon: <ReceiptLongIcon fontSize="small" /> },
-      { label: 'Planificación', to: '/planning', icon: <PieChartIcon fontSize="small" /> },
     ],
   },
   {
-    group: 'Datos',
+    group: 'Datos y ajustes',
     items: [
-      { label: 'Conexiones', to: '/bank-connections', icon: <LinkIcon fontSize="small" /> },
-      { label: 'Importar', to: '/imports', icon: <UploadFileIcon fontSize="small" /> },
+      { label: 'Bancos conectados', to: '/bank-connections', icon: <LinkIcon fontSize="small" /> },
+      { label: 'Importar cartolas', to: '/imports', icon: <UploadFileIcon fontSize="small" /> },
       { label: 'Categorías', to: '/categories', icon: <CategoryIcon fontSize="small" /> },
     ],
   },
@@ -60,13 +60,13 @@ function DrawerContent() {
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
           <Box sx={{
             width: 32, height: 32, borderRadius: 2,
-            background: 'linear-gradient(135deg, #6366f1 0%, #a78bfa 100%)',
+            background: 'linear-gradient(135deg, #0f766e 0%, #2563eb 100%)',
             display: 'flex', alignItems: 'center', justifyContent: 'center',
           }}>
             <SavingsIcon sx={{ fontSize: 18, color: '#fff' }} />
           </Box>
           <Typography variant="subtitle1" fontWeight={700} sx={{
-            background: 'linear-gradient(135deg, #6366f1, #a78bfa)',
+            background: 'linear-gradient(135deg, #0f766e, #2563eb)',
             WebkitBackgroundClip: 'text',
             WebkitTextFillColor: 'transparent',
           }}>

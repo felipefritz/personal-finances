@@ -8,6 +8,7 @@ import {
   Tooltip,
   Stack,
   Chip,
+  Divider,
 } from '@mui/material';
 import MenuIcon from '@mui/icons-material/Menu';
 import DarkModeIcon from '@mui/icons-material/DarkMode';
@@ -66,17 +67,24 @@ export default function Header({ onMenuClick }: HeaderProps) {
       elevation={0}
       sx={{ bgcolor: 'background.paper', width: '100%', borderBottom: '1px solid', borderColor: 'divider' }}
     >
-      <Toolbar>
+      <Toolbar sx={{ minHeight: { xs: 56, sm: 64 }, gap: 1 }}>
         <IconButton
           edge="start"
           onClick={onMenuClick}
-          sx={{ mr: 2, display: { xs: 'flex', md: 'none' } }}
+          sx={{ display: { xs: 'flex', md: 'none' } }}
         >
           <MenuIcon />
         </IconButton>
-        <Box sx={{ flexGrow: 1 }} />
+        <Box sx={{ flexGrow: 1, minWidth: 0 }}>
+          <Typography variant="subtitle1" fontWeight={700} noWrap>
+            Panel financiero
+          </Typography>
+          <Typography variant="caption" color="text.secondary" sx={{ display: { xs: 'none', sm: 'block' } }}>
+            Mes actual, deudas y presupuestos en un solo lugar
+          </Typography>
+        </Box>
 
-        <Stack direction="row" spacing={1} sx={{ mr: 1.5, display: { xs: 'none', lg: 'flex' } }}>
+        <Stack direction="row" spacing={0.75} sx={{ mr: 0.5, display: { xs: 'none', xl: 'flex' } }}>
           <Tooltip
             title={exchangeRates?.USD_prev
               ? `Ayer: $${formatIndicator(exchangeRates.USD_prev)}`
@@ -92,9 +100,9 @@ export default function Header({ onMenuClick }: HeaderProps) {
                 </Box>
               }
               sx={{
-                fontWeight: 700,
+                fontWeight: 600,
                 borderColor: usdTrend ? (usdTrend === 'up' ? 'error.light' : 'success.light') : 'divider',
-                bgcolor: 'background.default',
+                bgcolor: 'transparent',
                 '& .MuiChip-label': { display: 'flex', alignItems: 'center', px: 1.25 },
               }}
             />
@@ -114,14 +122,16 @@ export default function Header({ onMenuClick }: HeaderProps) {
                 </Box>
               }
               sx={{
-                fontWeight: 700,
+                fontWeight: 600,
                 borderColor: ufTrend ? (ufTrend === 'up' ? 'error.light' : 'success.light') : 'divider',
-                bgcolor: 'background.default',
+                bgcolor: 'transparent',
                 '& .MuiChip-label': { display: 'flex', alignItems: 'center', px: 1.25 },
               }}
             />
           </Tooltip>
         </Stack>
+
+        <Divider orientation="vertical" flexItem sx={{ display: { xs: 'none', md: 'block' }, mx: 0.5 }} />
 
         <Tooltip title={mode === 'dark' ? 'Cambiar a modo claro' : 'Cambiar a modo oscuro'}>
           <IconButton onClick={toggleMode} sx={{ mr: 0.5 }}>
